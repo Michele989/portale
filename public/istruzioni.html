@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="it" class="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Istruzioni</title>
+<link rel="stylesheet" href="stile.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="wrap legal">
+<p class="no-print"><a href="index.html">← Torna al servizio</a></p>
+<h1>Istruzioni d'uso</h1>
+<p class="muted"><span data-nome></span> — foglio informativo per i clienti. <span class="no-print">Puoi stamparlo o salvarlo in PDF dal browser.</span></p>
+
+<div class="nota"><b>Cosa è e cosa non è.</b> Il servizio calcola <b>segnali tecnici</b> con regole matematiche su dati storici e li mette alla prova su dati passati. Non prevede il futuro, non garantisce guadagni e non è consulenza finanziaria: la decisione è sempre tua.</div>
+
+<h2>1. Iniziare in 3 passi</h2>
+<ol>
+<li><b>Registrati</b> dalla pagina principale scegliendo uno <b>username</b>, un'email e una password (min. 8 caratteri).</li>
+<li><b>Comunica il tuo username</b> all'amministratore (<span data-cfg="CONTATTO_ADMIN"></span>). Lui ti abilita con una chiave a usi; non devi inserire nulla.</li>
+<li><b>Ricontrolla / ricarica la pagina</b>: in alto compare «Ti restano N usi» e puoi iniziare.</li>
+</ol>
+
+<h2>2. Gli «usi»</h2>
+<p>Ogni titolo analizzato consuma <b>1 uso</b>. Prima di analizzare tutta la lista ti viene mostrato quanti usi verranno spesi e devi confermare. Se l'analisi fallisce per un problema del servizio dati, l'uso ti viene riaccreditato. Quando gli usi finiscono o la chiave scade, l'amministratore può ricaricarla.</p>
+<div id="piani"></div>
+
+<h2>3. La tua lista</h2>
+<ul>
+<li><b>Azioni</b>: parte vuota, scegli tu i ticker (es. AAPL, MSFT).</li>
+<li><b>ETF</b> e <b>Crescita</b>: hanno titoli di esempio che puoi togliere o aggiungere.</li>
+<li>Usa i ticker americani (es. <code>VOO</code>, <code>NVDA</code>). Massimo 500 titoli.</li>
+</ul>
+
+<h2>3 bis. Scegli il tuo orizzonte</h2>
+<ul>
+<li>In cima alla scheda «Analisi» scegli <b>Breve</b> (circa 1 mese), <b>Medio</b> (circa 3 mesi) o <b>Lungo</b> (circa 1 anno).</li>
+<li>Sopra le schede compare la <b>classifica</b> per l'orizzonte scelto: titoli con segnale favorevole, sfavorevoli («da evitare secondo le regole») e neutri. Tocca una riga per andare alla scheda.</li>
+<li>Ogni scheda ha lo <b>studio per orizzonte</b>: cosa è successo in passato in situazioni simili e un <b>esempio di andamento possibile</b> (fascia colorata e tre percorsi simulati). Sono statistiche e simulazioni, non previsioni.</li>
+<li>Cambiare orizzonte non consuma usi: i tre studi vengono calcolati insieme a ogni analisi. I titoli analizzati prima di questo aggiornamento vanno rianalizzati.</li>
+</ul>
+
+<h2>4. Come leggere una scheda</h2>
+<ul>
+<li><b>SMA50 / SMA200</b>: media dei prezzi degli ultimi 50 / 200 giorni. Prezzo sopra la media = tendenza più favorevole.</li>
+<li><b>RSI14</b>: da 0 a 100. Sotto 35 = scesa molto in fretta («ipervenduto»); sopra 70 = salita molto in fretta.</li>
+<li><b>ADX14</b>: forza del trend. Sopra 20 il movimento è «deciso», non per forza rialzista.</li>
+<li><b>ATR14</b>: quanto si muove mediamente il titolo in un giorno. Serve per lo <b>stop ATR</b> (prezzo di acquisto − 2×ATR) e per dimensionare la posizione.</li>
+<li><b>Volume</b>: rapporto con la media dei 20 giorni. Oltre 1,2x = interesse sopra la norma.</li>
+<li><b>Punteggio /4</b>: quanti controlli sono positivi (sopra SMA50, sopra SMA200, RSI 50–70, ADX ≥ 20). «Confermato 3 giorni» = chiuso sopra la SMA50 per 3 giorni di fila.</li>
+<li><b>Backtest</b>: «X% su N casi simulati» significa che in passato, in situazioni simili, il titolo ha toccato l'obiettivo prima dello stop nel X% dei casi (al netto delle commissioni). L'<b>intervallo 95%</b> è il margine di errore statistico: con pochi casi è molto largo. <b>Non è la probabilità che succeda in futuro.</b></li>
+<li><b>Ipervenduti in cima</b>: titoli sotto la SMA50 con RSI basso, ordinati dall'estremo inferiore dell'intervallo (premia i dati solidi, non le coincidenze).</li>
+<li><b>Dimensione indicativa</b>: quante unità comprare perché, se scatta lo stop ATR, perdi circa il «rischio %» del tuo capitale (impostato in Impostazioni).</li>
+</ul>
+
+<h2>4 bis. Affidabilità: quanto fidarsi di un segnale</h2>
+<ul>
+<li>Ogni scheda ha un livello di <b>affidabilità storica</b> (alta, media, bassa, insufficiente) con il «perché»: casi disponibili, ultimi 12 mesi, confronto con ingressi casuali e con «compra e tieni», anni positivi.</li>
+<li>Gli <b>avvisi</b> (dati vecchi o anomali, mercato generale sotto la media a 200 giorni) vanno letti: abbassano la fiducia nel segnale.</li>
+<li>La scheda <b>Affidabilità</b> mostra il registro reale dei segnali emessi e la calibrazione (dichiarato contro osservato), più le statistiche su tutti i titoli.</li>
+<li>Dettagli completi: <a href="metodo.html">Come funzionano i segnali e i loro limiti</a>.</li>
+</ul>
+
+<h2>5. Portafoglio e segnali di uscita</h2>
+<p>Inserisci a mano le posizioni (ticker, quantità, prezzo di acquisto): il servizio non si collega al tuo broker. Premendo «Aggiorna segnali del portafoglio» (1 uso per posizione) vedi per ciascuna:</p>
+<ul>
+<li><b>Valuta uscita</b>: stop-loss % raggiunto, stop ATR raggiunto oppure obiettivo raggiunto.</li>
+<li><b>Attenzione</b>: prezzo sotto la media a 50 giorni.</li>
+<li><b>Avviso di concentrazione</b>: un titolo oltre il 30% o un settore oltre il 50% del portafoglio.</li>
+</ul>
+<p><b>Avvisi email</b>: in Impostazioni puoi attivare una email a fine giornata (dopo la chiusura dei mercati USA) quando una posizione raggiunge stop o obiettivo. Funziona anche a pagina chiusa e a telefono spento, non consuma usi e si disattiva dal link in ogni email. Non è in tempo reale: usa i prezzi di chiusura.</p>
+<p><b>Notifiche del browser</b>: funzionano solo mentre la pagina è aperta.</p>
+
+<h2>6. Impostazioni</h2>
+<p>Stop-loss % (default 8), take profit netto % (default 8), commissione % per operazione, spread + slittamento % (default 0,1), capitale e rischio per operazione. Dopo averli cambiati, rilancia l'analisi per aggiornare soglie e backtest.</p>
+
+<h2>7. Limiti da conoscere</h2>
+<ul>
+<li>I dati sono giornalieri e possono avere qualche ora di ritardo (cache fino a 6 ore).</li>
+<li>Con il piano dati gratuito il servizio limita le richieste al minuto: una lista lunga può richiedere qualche minuto.</li>
+<li>Gli eventi improvvisi (notizie, bilanci, gap di apertura) non sono previsti da nessun indicatore.</li>
+<li>Le simulazioni ignorano tasse, dividendi e slittamenti di prezzo.</li>
+</ul>
+
+<h2>8. Domande frequenti</h2>
+<p><b>«Mi dice quali azioni saliranno?»</b> No. Nessuno strumento può saperlo. Mostra solo la situazione tecnica attuale e quanto spesso situazioni simili sono andate bene o male in passato.</p>
+<p><b>«Ho dimenticato la password.»</b> Dalla pagina di accesso scrivi la tua email e premi «Password dimenticata?»: ricevi un link per sceglierne una nuova. Se la mail non arriva, chiedi all'amministratore una password temporanea.</p>
+<p><b>«Posso metterlo sul telefono come un'app?»</b> Sì: apri il sito con Chrome (Android) o Safari (iPhone) e scegli «Aggiungi a schermata Home» / «Installa app».</p>
+<p><b>«Voglio cancellare i miei dati.»</b> Scrivi a <span data-cfg="EMAIL_CONTATTO"></span> (vedi <a href="privacy.html">privacy</a>).</p>
+<p class="muted">Vedi anche <a href="termini.html">Termini d'uso</a> e <a href="privacy.html">Privacy</a>.</p>
+<script>
+(function () {
+  var C = window.CONFIG || {}, el = document.getElementById("piani");
+  if (!C.PIANI) return;
+  var h = '<div class="scroll"><table><thead><tr><th>Piano</th><th>Usi</th><th>Validità</th><th>Prezzo</th></tr></thead><tbody>';
+  C.PIANI.forEach(function (p) { h += "<tr><td>" + p.nome + "</td><td>" + p.usi + "</td><td>" + p.giorni + " giorni</td><td>" + p.prezzo + "</td></tr>"; });
+  h += "</tbody></table></div>";
+  if (C.RICARICA) h += '<p class="muted">Ricarica: +' + C.RICARICA.usi + " usi a " + C.RICARICA.prezzo + ".</p>";
+  el.innerHTML = h;
+})();
+</script>
+</div>
+<script>
+document.querySelectorAll("[data-cfg]").forEach(function (e) { e.textContent = (window.CONFIG || {})[e.getAttribute("data-cfg")] || ""; });
+document.querySelectorAll("[data-nome]").forEach(function (e) { e.textContent = (window.CONFIG || {}).NOME_SERVIZIO || ""; });
+</script>
+</body>
+</html>

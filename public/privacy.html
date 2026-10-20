@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="it" class="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Informativa privacy</title>
+<link rel="stylesheet" href="stile.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="wrap legal">
+<p class="no-print"><a href="index.html">← Torna al servizio</a></p>
+<h1>Informativa sulla privacy (GDPR)</h1>
+<p class="muted">Ultimo aggiornamento: <span data-cfg="ULTIMO_AGGIORNAMENTO_LEGALE"></span></p>
+<div class="nota">Testo-base da far rivedere da un professionista prima della vendita al pubblico.</div>
+
+<h2>1. Titolare del trattamento</h2>
+<p><b data-cfg="TITOLARE"></b> — contatto: <span data-cfg="EMAIL_CONTATTO"></span></p>
+
+<h2>2. Dati trattati e finalità</h2>
+<ul>
+<li><b>Dati di account</b>: username, indirizzo email, password (conservata solo in forma cifrata/hash dal fornitore di autenticazione), data di accettazione dei termini. Finalità: creare e gestire l'account e l'accesso al Servizio (base giuridica: esecuzione del contratto, art. 6.1.b GDPR).</li>
+<li><b>Dati d'uso del Servizio</b>: lista dei titoli, posizioni di portafoglio inserite da te, parametri di rischio, chiave assegnata, numero di usi, data dell'ultimo uso. Finalità: erogare il Servizio e gestire gli usi (art. 6.1.b).</li>
+<li><b>Avvisi email</b> (solo se li attivi): una email a fine giornata con i segnali tecnici di uscita sulle posizioni che hai inserito. Base giuridica: il tuo consenso (art. 6.1.a), revocabile in ogni momento dalle Impostazioni o dal link presente in ogni email. La data del consenso viene registrata.</li>
+<li><b>Recupero password</b>: se lo richiedi, il fornitore di autenticazione ti invia una email con un link di ripristino.</li>
+<li><b>Registro dei segnali e statistiche</b>: sono dati sui titoli, aggregati e non collegati alla tua identità.</li>
+<li><b>Sicurezza e obblighi di legge</b>: log tecnici essenziali, adempimenti fiscali e contabili (art. 6.1.c e 6.1.f).</li>
+</ul>
+<p>Non vengono richiesti dati bancari né le credenziali del tuo broker. Il Servizio non usa cookie di profilazione né di marketing; usa solo l'archiviazione locale del browser per mantenere la sessione e l'ultima analisi.</p>
+
+<h2>3. Destinatari e responsabili</h2>
+<p>Per erogare il Servizio il Gestore si avvale di fornitori che agiscono come responsabili del trattamento: <b>Supabase</b> (database, autenticazione, funzioni server), il fornitore di hosting del sito (es. Netlify) e il fornitore di invio email (Resend o Brevo) per le email di servizio e gli avvisi. I ticker richiesti sono inviati a un fornitore di dati di mercato (Twelve Data) senza associarli alla tua identità. Alcuni fornitori possono trattare dati fuori dallo Spazio Economico Europeo con le garanzie previste dal GDPR (es. clausole contrattuali standard). I dati non sono venduti a terzi.</p>
+
+<h2>4. Conservazione</h2>
+<p>I dati dell'account sono conservati finché l'account è attivo; alla cancellazione sono rimossi account, chiavi, liste e portafoglio. Le informazioni necessarie per obblighi fiscali/contabili sono conservate per i termini di legge.</p>
+
+<h2>5. I tuoi diritti</h2>
+<p>Puoi chiedere accesso, rettifica, cancellazione, limitazione, portabilità e opposizione scrivendo a <span data-cfg="EMAIL_CONTATTO"></span>. Puoi proporre reclamo al Garante per la protezione dei dati personali (garanteprivacy.it).</p>
+
+<h2>6. Sicurezza</h2>
+<p>I dati di ogni utente sono isolati con regole di sicurezza a livello di database: ogni utente può leggere e modificare solo i propri dati. Le chiavi dei servizi esterni restano sul server e non sono visibili nel browser.</p>
+</div>
+<script>
+document.querySelectorAll("[data-cfg]").forEach(function (e) { e.textContent = (window.CONFIG || {})[e.getAttribute("data-cfg")] || ""; });
+document.querySelectorAll("[data-nome]").forEach(function (e) { e.textContent = (window.CONFIG || {}).NOME_SERVIZIO || ""; });
+</script>
+</body>
+</html>

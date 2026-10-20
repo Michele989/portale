@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="it" class="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Disattiva avvisi email</title>
+<link rel="stylesheet" href="stile.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="wrap legal" style="max-width:520px">
+  <h1 id="titolo">Avvisi email</h1>
+  <section>
+    <p>Vuoi smettere di ricevere gli avvisi email sui segnali tecnici di uscita?</p>
+    <p class="muted">Potrai riattivarli quando vuoi da Impostazioni, dopo l'accesso.</p>
+    <button type="button" id="btn">Disattiva gli avvisi</button>
+    <p id="msg" class="muted" style="margin-top:12px"></p>
+  </section>
+  <p class="muted"><a href="index.html">Vai al servizio</a></p>
+</div>
+<script>
+(function () {
+  var C = window.CONFIG || {};
+  var t = new URLSearchParams(location.search).get("t") || "";
+  var btn = document.getElementById("btn"), msg = document.getElementById("msg");
+  document.getElementById("titolo").textContent = C.NOME_SERVIZIO || "Avvisi email";
+  if (!/^[0-9a-f-]{36}$/i.test(t)) { btn.disabled = true; msg.textContent = "Link non valido: usa il link presente nell'email."; msg.className = "err"; return; }
+  btn.onclick = async function () {
+    btn.disabled = true; msg.className = "muted"; msg.textContent = "Un momento…";
+    try {
+      // il token (nell'indirizzo) e' l'autorizzazione: la funzione e' pubblicata senza controllo JWT
+      var r = await fetch(C.SUPABASE_URL + "/functions/v1/disiscrivi?t=" + encodeURIComponent(t), { method: "POST", headers: { apikey: C.SUPABASE_ANON_KEY } });
+      var j = await r.json();
+      if (j.ok) { msg.className = "ok"; msg.textContent = "Fatto: non riceverai più avvisi email."; btn.classList.add("hidden"); }
+      else { msg.className = "err"; msg.textContent = j.errore || "Non è stato possibile completare."; btn.disabled = false; }
+    } catch (e) { msg.className = "err"; msg.textContent = "Connessione assente: riprova."; btn.disabled = false; }
+  };
+})();
+</script>
+</body>
+</html>

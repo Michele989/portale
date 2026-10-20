@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="it" class="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Termini d'uso</title>
+<link rel="stylesheet" href="stile.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="wrap legal">
+<p class="no-print"><a href="index.html">← Torna al servizio</a></p>
+<h1>Termini d'uso e disclaimer</h1>
+<p class="muted">Ultimo aggiornamento: <span data-cfg="ULTIMO_AGGIORNAMENTO_LEGALE"></span></p>
+<div class="nota">Testo-base da far rivedere da un professionista prima della vendita al pubblico.</div>
+
+<h2>1. Il servizio</h2>
+<p><span data-nome></span> (il «Servizio») è uno strumento di analisi tecnica che calcola indicatori matematici (medie mobili, RSI, ADX, ATR, volumi) su dati storici di mercato e mostra simulazioni su dati passati («backtest»). Il Servizio è gestito da <b data-cfg="TITOLARE"></b> («il Gestore»).</p>
+
+<h2>2. Nessuna consulenza finanziaria</h2>
+<p>Il Servizio fornisce <b>segnali tecnici generici e informazioni a scopo informativo ed educativo</b>. Non costituisce consulenza in materia di investimenti, raccomandazione personalizzata, sollecitazione al pubblico risparmio, né offerta di acquisto o vendita di strumenti finanziari. Il Gestore non è un consulente finanziario autorizzato e non conosce la tua situazione patrimoniale, i tuoi obiettivi o la tua propensione al rischio.</p>
+
+<h2>3. Rischio</h2>
+<ul>
+<li>Investire comporta il rischio di perdere parte o tutto il capitale.</li>
+<li>I risultati passati e le simulazioni storiche <b>non garantiscono</b> risultati futuri; le percentuali mostrate sono frequenze osservate nel passato, non probabilità future.</li>
+<li>Le simulazioni semplificano la realtà (ignorano ad esempio slittamenti di prezzo, tasse, dividendi e gap di apertura).</li>
+<li>Nessun indicatore è infallibile: i segnali possono essere sbagliati.</li>
+<li>Il registro dei segnali e le statistiche mostrate sono dati informativi su esiti passati di regole matematiche fisse: non indicano ciò che accadrà.</li>
+<li>Ogni decisione di investimento è esclusivamente tua e a tuo rischio.</li>
+</ul>
+
+<h2>4. Account, chiavi e usi</h2>
+<p>L'accesso alle analisi richiede un account e una chiave a usi assegnata dal Gestore. Ogni titolo analizzato consuma un (1) uso. La chiave è personale, non cedibile e può avere una scadenza. Gli usi non utilizzati e non scaduti restano disponibili fino alla scadenza; gli usi eventualmente consumati per un'analisi non riuscita per errore del servizio dati vengono riaccreditati automaticamente. Salvo diversa disposizione di legge (incluso, ove applicabile, il diritto di recesso dei consumatori), gli usi già consumati non sono rimborsabili.</p>
+
+<h2>5. Pagamenti</h2>
+<p>I corrispettivi, le modalità e i tempi sono concordati direttamente con il Gestore. Il Servizio non elabora pagamenti online.</p>
+
+<h2>6. Uso corretto</h2>
+<p>È vietato: condividere l'account o la chiave, usare sistemi automatici per aggirare i limiti, rivendere o ridistribuire i dati o le analisi, tentare di accedere ai dati di altri utenti. Il Gestore può sospendere o disattivare l'accesso in caso di violazione.</p>
+
+<h2>7. Dati di terzi e disponibilità</h2>
+<p>I prezzi provengono da fornitori terzi e possono essere ritardati, incompleti o errati. Il Servizio è fornito «così com'è», senza garanzia di continuità o assenza di errori. Per quanto consentito dalla legge, il Gestore non risponde di perdite o mancati guadagni derivanti dall'uso del Servizio, salvo dolo o colpa grave e nei limiti inderogabili di legge.</p>
+
+<h2>8. Modifiche</h2>
+<p>Il Gestore può modificare il Servizio e questi termini; le modifiche sostanziali saranno comunicate sul sito.</p>
+
+<h2>9. Legge applicabile</h2>
+<p>I presenti termini sono regolati dalla legge italiana. Per i consumatori restano ferme le tutele inderogabili e il foro del consumatore.</p>
+
+<h2>10. Contatti</h2>
+<p><span data-cfg="EMAIL_CONTATTO"></span></p>
+</div>
+<script>
+document.querySelectorAll("[data-cfg]").forEach(function (e) { e.textContent = (window.CONFIG || {})[e.getAttribute("data-cfg")] || ""; });
+document.querySelectorAll("[data-nome]").forEach(function (e) { e.textContent = (window.CONFIG || {}).NOME_SERVIZIO || ""; });
+</script>
+</body>
+</html>

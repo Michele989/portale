@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="it" class="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor Azioni & ETF</title>
+<link rel="stylesheet" href="stile.css">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b0f0d">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="comune.js"></script>
+<script src="catalogo.js"></script>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1 id="titolo">Monitor Azioni & ETF</h1>
+  <div id="utenteInfo" class="muted"></div>
+</header>
+
+<div id="avvisoConfig" class="allarme hidden">
+  Il sito non è ancora configurato: compila <b>config.js</b> con l'URL e la anon key di Supabase (vedi README).
+</div>
+
+<!-- ============ ACCESSO / REGISTRAZIONE ============ -->
+<section id="vistaAuth" class="hidden" style="max-width:460px;margin:0 auto 14px">
+  <div class="tabs">
+    <button id="tabLogin" class="on" type="button">Accedi</button>
+    <button id="tabRegistrati" class="sec" type="button">Registrati</button>
+  </div>
+  <form id="formLogin" autocomplete="on">
+    <label for="loginEmail">Email</label>
+    <input id="loginEmail" type="email" autocomplete="email" required>
+    <label for="loginPassword">Password</label>
+    <input id="loginPassword" type="password" autocomplete="current-password" required>
+    <button type="submit" id="btnLogin">Accedi</button>
+    <div class="muted" style="margin-top:10px"><a href="#" id="linkDimenticata">Password dimenticata?</a></div>
+  </form>
+  <form id="formRegistrati" class="hidden" autocomplete="on">
+    <label for="regUsername">Username (lo comunicherai all'amministratore)</label>
+    <input id="regUsername" type="text" minlength="3" maxlength="20" pattern="[A-Za-z0-9_.\-]{3,20}" autocomplete="username" required>
+    <label for="regEmail">Email</label>
+    <input id="regEmail" type="email" autocomplete="email" required>
+    <label for="regPassword">Password (min. 8 caratteri)</label>
+    <input id="regPassword" type="password" minlength="8" autocomplete="new-password" required>
+    <label style="display:flex;gap:8px;align-items:flex-start;color:var(--text)">
+      <input id="regTermini" type="checkbox" style="width:auto;margin-top:3px" required>
+      <span>Ho letto e accetto i <a href="termini.html" target="_blank">Termini d'uso</a> e l'<a href="privacy.html" target="_blank">Informativa privacy</a>, e capisco che il servizio non è consulenza finanziaria.</span>
+    </label>
+    <button type="submit" id="btnRegistrati">Crea account</button>
+    <div class="muted" style="margin-top:8px">Dopo la registrazione comunica il tuo username all'amministratore: ti abiliterà con una chiave a usi.</div>
+  </form>
+  <div id="authMsg" class="muted" style="margin-top:10px"></div>
+  <div class="muted" style="margin-top:10px"><a href="istruzioni.html" target="_blank">Come funziona il servizio</a></div>
+</section>
+
+<section id="vistaRecupero" class="hidden" style="max-width:460px;margin:0 auto 14px">
+  <h2>Scegli una nuova password</h2>
+  <form id="formRecupero">
+    <label for="recPw">Nuova password (min. 8 caratteri)</label>
+    <input id="recPw" type="password" minlength="8" autocomplete="new-password" required>
+    <button type="submit">Salva password</button>
+    <div id="msgRecupero" class="muted" style="margin-top:8px"></div>
+  </form>
+</section>
+
+<!-- ============ AREA CLIENTE ============ -->
+<div id="vistaApp" class="hidden">
+
+  <div id="boxStato"></div>
+  <div id="boxAllarmi"></div>
+
+  <div class="tabs" id="menu">
+    <button type="button" data-tab="analisi" class="on">Analisi</button>
+    <button type="button" data-tab="portafoglio" class="sec">Portafoglio</button>
+    <button type="button" data-tab="affidabilita" class="sec">Affidabilità</button>
+    <button type="button" data-tab="impostazioni" class="sec">Impostazioni</button>
+  </div>
+
+  <!-- ANALISI -->
+  <div id="tab-analisi">
+    <section>
+      <h2>Il tuo orizzonte di investimento</h2>
+      <div class="orizzonte-btns" id="orizzonteBtns"></div>
+      <div class="muted" id="orizzonteDesc" style="margin-top:8px"></div>
+    </section>
+    <section>
+      <h2>La mia lista</h2>
+      <form id="formTicker" class="row">
+        <div><label for="nuovoTicker">Cerca per nome o ticker (es. Apple, oro, VOO)</label>
+        <input id="nuovoTicker" type="text" maxlength="30" autocomplete="off" style="margin-bottom:0"></div>
+        <div><label for="nuovoTipo">Categoria</label>
+        <select id="nuovoTipo" style="margin-bottom:0">
+          <option value="azioni">Azioni</option>
+          <option value="etf">ETF</option>
+          <option value="crescita">Crescita</option>
+        </select></div>
+        <button type="submit" id="btnAggiungi">Aggiungi</button>
+      </form>
+      <div id="suggerimenti" class="sugg hidden"></div>
+      <div id="msgLista" class="muted" style="margin-top:6px"></div>
+      <details style="margin-top:8px"><summary class="muted" style="cursor:pointer">Aggiungi un pacchetto di titoli</summary>
+        <div id="pacchetti" class="row" style="margin-top:8px"></div>
+        <div class="muted">Aggiunge solo quelli che mancano (massimo 500 titoli in lista). Ogni titolo analizzato costa 1 uso, e con il piano dati gratuito l\'analisi di una lista molto lunga richiede parecchi minuti (circa 8 titoli al minuto).</div>
+      </details>
+      <h3>Azioni</h3><div id="chips-azioni"></div>
+      <h3>ETF</h3><div id="chips-etf"></div>
+      <h3>Crescita</h3><div id="chips-crescita"></div>
+      <div class="row" style="margin-top:14px">
+        <button type="button" id="btnAnalizzaTutto">Analizza tutta la lista</button>
+        <button type="button" id="btnCsv" class="sec">Esporta CSV</button>
+      </div>
+      <div class="muted" style="margin-top:8px">Ogni titolo analizzato consuma <b>1 uso</b>. Prima di partire ti viene mostrato quanti ne userai.</div>
+      <div id="progresso" class="muted" style="margin-top:6px"></div>
+    </section>
+    <div id="boxClassifica"></div>
+    <div id="boxIpervenduti"></div>
+    <div id="risultati"></div>
+  </div>
+
+  <!-- PORTAFOGLIO -->
+  <div id="tab-portafoglio" class="hidden">
+    <section>
+      <h2>Il mio portafoglio (inserimento manuale)</h2>
+      <form id="formPos" class="row">
+        <div><label for="posTicker">Ticker</label><input id="posTicker" type="text" maxlength="12" autocapitalize="characters" required></div>
+        <div><label for="posQta">Quantità</label><input id="posQta" type="number" step="any" min="0.0001" required></div>
+        <div><label for="posPrezzo">Prezzo di acquisto</label><input id="posPrezzo" type="number" step="any" min="0.0001" required></div>
+        <div><label for="posData">Data acquisto</label><input id="posData" type="date"></div>
+        <button type="submit" id="btnPos">Salva posizione</button>
+      </form>
+      <div id="msgPos" class="muted" style="margin-top:6px"></div>
+      <div class="row" style="margin-top:10px">
+        <button type="button" id="btnAggiornaPf">Aggiorna segnali del portafoglio</button>
+        <button type="button" id="btnNotifiche" class="sec">Attiva notifiche del browser</button>
+      </div>
+      <div class="muted" style="margin-top:6px"><b>Avvisi a sito chiuso:</b> vai in <i>Impostazioni</i> e spunta «Avvisi email»: ogni sera, dopo la chiusura dei mercati USA, il servizio controlla le posizioni che hai inserito qui e, se c\'è un segnale di vendita (stop-loss, stop ATR o obiettivo), ti manda una email anche se il sito è chiuso. Le notifiche del browser (il pulsante qui sopra) funzionano invece solo mentre questa pagina resta aperta. Il servizio non vede i tuoi conti di investimento: le posizioni le inserisci tu a mano.</div>
+    </section>
+    <div id="boxConcentrazione"></div>
+    <section>
+      <h2>Posizioni</h2>
+      <div class="scroll" id="tabellaPf"></div>
+    </section>
+  </div>
+
+  <!-- AFFIDABILITA' -->
+  <div id="tab-affidabilita" class="hidden">
+    <section>
+      <h2>Registro reale dei segnali</h2>
+      <p class="muted">Ogni volta che il servizio emette un segnale (trend rialzista confermato o ipervenduto), lo registra con data e prezzo. Dopo l'esito (obiettivo +8% o stop −8% entro 40 giorni, regole fisse) il risultato entra qui. È l'unica misura <b>reale</b>, non simulata, di come funzionano i segnali.</p>
+      <div id="boxTrack" class="muted">Caricamento…</div>
+    </section>
+    <section>
+      <h2>Calibrazione</h2>
+      <p class="muted">Se il servizio dichiara «60% storico», i segnali reali dovrebbero riuscire circa 6 volte su 10. Qui si confronta il dichiarato con l'osservato.</p>
+      <div id="boxCalib" class="muted"></div>
+    </section>
+    <section>
+      <h2>Statistiche su tutti i titoli analizzati</h2>
+      <p class="muted">Le stesse regole applicate a molti titoli insieme: campione molto più ampio del singolo titolo, quindi più solido. Con parametri standard (+8% / −8% / 40 giorni).</p>
+      <div id="boxAggregate" class="muted"></div>
+    </section>
+    <button type="button" id="btnAggiornaAff" class="sec">Aggiorna</button>
+    <p class="muted"><a href="metodo.html" target="_blank">Come funzionano i segnali e quali sono i loro limiti</a></p>
+  </div>
+
+  <!-- IMPOSTAZIONI -->
+  <div id="tab-impostazioni" class="hidden">
+    <section>
+      <h2>Parametri di rischio</h2>
+      <form id="formImp">
+        <div class="row">
+          <div><label for="impSl">Stop-loss %</label><input id="impSl" type="number" step="0.1" min="1" max="50"></div>
+          <div><label for="impTp">Take profit % (netto)</label><input id="impTp" type="number" step="0.1" min="1" max="100"></div>
+          <div><label for="impComm">Commissione % per operazione</label><input id="impComm" type="number" step="0.01" min="0" max="5"></div>
+          <div><label for="impSpread">Spread + slittamento % (totale)</label><input id="impSpread" type="number" step="0.05" min="0" max="5"></div>
+        </div>
+        <div class="row">
+          <div><label for="impCap">Capitale disponibile (€/$)</label><input id="impCap" type="number" step="1" min="0"></div>
+          <div><label for="impRischio">Rischio per operazione % del capitale</label><input id="impRischio" type="number" step="0.1" min="0.1" max="10"></div>
+        </div>
+        <label style="display:flex;gap:8px;align-items:flex-start;color:var(--text);margin-top:10px">
+          <input id="impAvvisi" type="checkbox" style="width:auto;margin-top:3px">
+          <span><b>Avvisi email a fine giornata</b>: ricevi una email quando una posizione del tuo portafoglio raggiunge stop-loss, stop ATR o obiettivo. Usa l'email del tuo account, è gratuito e puoi disattivarlo quando vuoi (anche dal link nell'email). I prezzi sono di chiusura: l'avviso arriva a fine giornata, non in tempo reale.</span>
+        </label>
+        <button type="submit">Salva parametri</button>
+        <span id="msgImp" class="muted"></span>
+      </form>
+    </section>
+    <section>
+      <h2>Account</h2>
+      <div class="kv"><span>Username</span><span id="accUser"></span><span>Email</span><span id="accEmail"></span></div>
+      <form id="formPw" class="row">
+        <div><label for="nuovaPw">Nuova password (min. 8)</label><input id="nuovaPw" type="password" minlength="8" autocomplete="new-password"></div>
+        <button type="submit">Cambia password</button>
+      </form>
+      <div id="msgPw" class="muted"></div>
+      <p class="muted">Per cancellare i tuoi dati scrivi a <span data-cfg="EMAIL_CONTATTO"></span> (<a href="privacy.html">privacy</a>).</p>
+    </section>
+  </div>
+</div>
+
+<div class="disclaimer">
+  <b>Avviso importante.</b> Questo servizio mostra <b>segnali tecnici</b> calcolati con regole matematiche su dati storici (medie mobili, RSI, ADX, ATR, volumi) e simulazioni su dati passati.
+  Non è consulenza finanziaria, né raccomandazione personalizzata, né previsione: i risultati passati non garantiscono quelli futuri e puoi perdere parte o tutto il capitale investito.
+  Ogni decisione resta tua. &nbsp;·&nbsp; <a href="istruzioni.html" target="_blank">Istruzioni</a> · <a href="metodo.html" target="_blank">Metodo e limiti</a> · <a href="termini.html" target="_blank">Termini d'uso</a> · <a href="privacy.html" target="_blank">Privacy</a>
+  <span id="linkAdmin" class="hidden"> · <a href="admin.html">Pannello admin</a></span>
+</div>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = MA.esc, fmt = MA.fmt;
+  var DEFAULT_ETF = ["SPY", "VOO", "QQQ", "VTI", "VGK", "IEMG", "AGG", "GLD"];
+  var DEFAULT_CRESCITA = ["ARKK", "IWO", "XBI", "ICLN", "SMH"];
+  var SETTORE = { AAPL:"Tecnologia", MSFT:"Tecnologia", NVDA:"Tecnologia", AMD:"Tecnologia", GOOGL:"Tecnologia", GOOG:"Tecnologia", META:"Tecnologia", AMZN:"Consumi", TSLA:"Auto/Consumi", PLTR:"Tecnologia", NFLX:"Comunicazioni", AVGO:"Tecnologia", INTC:"Tecnologia", CRM:"Tecnologia", ORCL:"Tecnologia", COIN:"Finanza/Cripto", JPM:"Finanza", V:"Finanza", MA:"Finanza", BAC:"Finanza", XOM:"Energia", CVX:"Energia", JNJ:"Sanità", PFE:"Sanità", UNH:"Sanità", KO:"Consumi", PEP:"Consumi", WMT:"Consumi", DIS:"Comunicazioni" };
+
+  var S = {
+    sessione: null, utente: null, admin: false,
+    profilo: null, chiave: null, imp: null,
+    wl: [], pf: [], ris: {}, err: {}, ultimaData: null,
+    inCorso: false, orizzonte: "medio"
+  };
+  try { var ozSalvato = localStorage.getItem("ma_orizzonte"); if (ozSalvato === "breve" || ozSalvato === "medio" || ozSalvato === "lungo") S.orizzonte = ozSalvato; } catch (e) { /* ignora */ }
+
+  function show(id, on) { $(id).classList.toggle("hidden", !on); }
+
+  // ------------------------------------------------------------ AVVIO
+  async function avvia() {
+    $("titolo").textContent = MA.C.NOME_SERVIZIO;
+    document.title = MA.C.NOME_SERVIZIO;
+    document.querySelectorAll("[data-cfg]").forEach(function (e) { e.textContent = MA.C[e.getAttribute("data-cfg")] || ""; });
+    if (!MA.configurato()) { show("avvisoConfig", true); show("vistaAuth", false); return; }
+    MA.init();
+    MA.sb.auth.onAuthStateChange(function (ev) {
+      // niente chiamate a Supabase dentro il callback: rimandate a dopo
+      if (ev === "PASSWORD_RECOVERY") { S.recupero = true; show("vistaRecupero", true); show("vistaAuth", false); show("vistaApp", false); }
+      else if (ev === "SIGNED_OUT" && !S.recupero) setTimeout(caricaSessione, 0);
+    });
+    if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(function () {});
+    await caricaSessione();
+  }
+
+  async function caricaSessione() {
+    var r = await MA.sb.auth.getSession();
+    S.sessione = r && r.data ? r.data.session : null;
+    if (S.recupero) return;
+    if (!S.sessione) {
+      show("vistaAuth", true); show("vistaApp", false);
+      $("utenteInfo").textContent = "";
+      return;
+    }
+    S.utente = S.sessione.user;
+    show("vistaAuth", false); show("vistaApp", true);
+    await caricaDatiUtente();
+  }
+
+  async function caricaDatiUtente() {
+    var uid = S.utente.id;
+    var p = await MA.sb.from("profiles").select("username,email").eq("user_id", uid).maybeSingle();
+    S.profilo = p.data || { username: "(sconosciuto)", email: S.utente.email };
+    var a = await MA.sb.from("admins").select("user_id").eq("user_id", uid).maybeSingle();
+    S.admin = !!(a.data);
+    show("linkAdmin", S.admin);
+    $("utenteInfo").innerHTML = esc(S.profilo.username) + ' · <a href="#" id="linkEsci">Esci</a>';
+    $("linkEsci").onclick = async function (e) { e.preventDefault(); await MA.sb.auth.signOut(); S.ris = {}; S.err = {}; await caricaSessione(); };
+    $("accUser").textContent = S.profilo.username;
+    $("accEmail").textContent = S.profilo.email;
+
+    await caricaImpostazioni();
+    await caricaChiave();
+    await caricaLista();
+    await caricaPortafoglio();
+    ripristinaCache();
+    renderTutto();
+  }
+
+  // ------------------------------------------------------------ CHIAVE E CONTATORE
+  async function caricaChiave() {
+    var r = await MA.sb.from("access_keys").select("*").eq("user_id", S.utente.id).order("id", { ascending: false }).limit(1).maybeSingle();
+    S.chiave = r.data || null;
+    renderStato();
+  }
+
+  function statoChiave() {
+    var k = S.chiave;
+    if (!k) return "nessuna";
+    if (k.stato === "disattivata") return "disattivata";
+    if (k.stato === "sostituita") return "nessuna";
+    if (k.scade_il && new Date(k.scade_il).getTime() <= Date.now()) return "scaduta";
+    if (k.usi_rimasti <= 0) return "esaurita";
+    return "ok";
+  }
+
+  function renderStato() {
+    var st = statoChiave(), k = S.chiave, h = "";
+    if (st === "nessuna") {
+      h = '<div class="attesa"><h2>In attesa di abilitazione</h2>' +
+        '<p>Il tuo account è stato creato. Per usare il servizio comunica questo username all\'amministratore:</p>' +
+        '<div class="username-grande">' + esc(S.profilo.username) + '</div>' +
+        '<p class="muted">Contatto: ' + esc(MA.C.CONTATTO_ADMIN) + '</p>' +
+        (S.admin ? '<p class="ok"><b>Sei amministratore:</b> per analizzare i titoli anche tu serve una chiave. Apri il <a href="admin.html">Pannello admin</a>, scrivi il tuo username e premi «Crea chiave»; poi torna qui e premi «ricontrolla».</p>' : '') +
+        '<div class="row"><button type="button" id="btnCopiaUser">Copia username</button><button type="button" id="btnRicontrolla" class="sec">Ho ricevuto la chiave: ricontrolla</button></div></div>';
+    } else if (st === "disattivata") {
+      h = '<div class="allarme"><b>Chiave disattivata.</b> Contatta l\'amministratore (' + esc(MA.C.CONTATTO_ADMIN) + ').<div style="margin-top:8px"><button type="button" id="btnRicontrolla" class="sec">Ricontrolla</button></div></div>';
+    } else if (st === "scaduta") {
+      h = '<div class="allarme"><b>Chiave scaduta il ' + MA.data(k.scade_il) + '.</b> Contatta l\'amministratore per rinnovare (' + esc(MA.C.CONTATTO_ADMIN) + ').<div style="margin-top:8px"><button type="button" id="btnRicontrolla" class="sec">Ricontrolla</button></div></div>';
+    } else if (st === "esaurita") {
+      h = '<div class="allarme"><b>Usi esauriti.</b> Chiedi una ricarica all\'amministratore (' + esc(MA.C.CONTATTO_ADMIN) + ').<div style="margin-top:8px"><button type="button" id="btnRicontrolla" class="sec">Ricontrolla</button></div></div>';
+    } else {
+      var perc = k.usi_totali ? Math.max(0, Math.min(100, (k.usi_rimasti / k.usi_totali) * 100)) : 0;
+      var classe = k.usi_rimasti === 0 ? "zero" : (perc <= 20 || k.usi_rimasti <= 5 ? "basso" : "");
+      var giorniA = k.scade_il ? Math.ceil((new Date(k.scade_il).getTime() - Date.now()) / 86400000) : null;
+      var pochi = k.usi_rimasti <= Math.max(5, Math.round(k.usi_totali * 0.1)) || (giorniA !== null && giorniA <= 5);
+      h = '<section><div class="contatore ' + classe + '"><div>Ti restano <b id="numUsi">' + k.usi_rimasti + '</b> ' + (k.usi_rimasti === 1 ? "uso" : "usi") + ' su ' + k.usi_totali + '</div>' +
+        '<div class="muted">' + (k.scade_il ? "Valida fino al " + MA.data(k.scade_il) : "Senza scadenza") + '</div></div>' +
+        '<div class="barra"><i style="width:' + perc.toFixed(0) + '%"></i></div>' +
+        (pochi ? '<div class="nota">Sta per finire' + (giorniA !== null && giorniA <= 5 ? " (scade tra " + Math.max(0, giorniA) + " giorni)" : " (pochi usi)") + ": chiedi la ricarica all'amministratore — " + esc(MA.C.CONTATTO_ADMIN) + "</div>" : "") + '</section>';
+    }
+    $("boxStato").innerHTML = h;
+    var c = $("btnCopiaUser"); if (c) c.onclick = async function () { c.textContent = (await MA.copia(S.profilo.username)) ? "Copiato!" : "Copia a mano"; };
+    var r = $("btnRicontrolla"); if (r) r.onclick = async function () { r.disabled = true; await caricaChiave(); };
+    var attiva = statoChiave() === "ok";
+    $("btnAnalizzaTutto").disabled = !attiva || S.inCorso;
+    $("btnAggiornaPf").disabled = !attiva || S.inCorso;
+  }
+
+  // ------------------------------------------------------------ IMPOSTAZIONI
+  async function caricaImpostazioni() {
+    var r = await MA.sb.from("impostazioni_rischio").select("*").eq("user_id", S.utente.id).maybeSingle();
+    S.imp = r.data || { stop_loss: 8, take_profit: 8, commissione: 0.2, spread: 0.1, capitale: 1000, rischio_pct: 1, inizializzato: false };
+    if (S.imp.spread === undefined || S.imp.spread === null) S.imp.spread = 0.1;
+    $("impSl").value = S.imp.stop_loss; $("impTp").value = S.imp.take_profit; $("impComm").value = S.imp.commissione; $("impSpread").value = S.imp.spread;
+    $("impAvvisi").checked = !!S.imp.avvisi_email; $("impCap").value = S.imp.capitale; $("impRischio").value = S.imp.rischio_pct;
+  }
+
+  function leggiImp() {
+    var n = function (id, d, min, max) { var v = parseFloat($(id).value); if (!isFinite(v)) v = d; return Math.min(max, Math.max(min, v)); };
+    return {
+      user_id: S.utente.id,
+      stop_loss: n("impSl", 8, 1, 50), take_profit: n("impTp", 8, 1, 100), commissione: n("impComm", 0.2, 0, 5), spread: n("impSpread", 0.1, 0, 5),
+      capitale: n("impCap", 1000, 0, 1e9), rischio_pct: n("impRischio", 1, 0.1, 10),
+      avvisi_email: $("impAvvisi").checked,
+      inizializzato: true
+    };
+  }
+
+  $("formImp").onsubmit = async function (e) {
+    e.preventDefault();
+    var riga = leggiImp();
+    // il consenso agli avvisi viene registrato con la data in cui lo si attiva
+    if (riga.avvisi_email && !S.imp.avvisi_email) riga.avvisi_consenso_il = new Date().toISOString();
+    var r = await MA.sb.from("impostazioni_rischio").upsert(riga, { onConflict: "user_id" });
+    if (r.error) { $("msgImp").textContent = "Errore nel salvataggio."; $("msgImp").className = "err"; return; }
+    S.imp = Object.assign({}, S.imp, riga); $("msgImp").textContent = "Salvato. Riesegui l'analisi per aggiornare backtest e soglie."; $("msgImp").className = "ok";
+    renderTutto();
+  };
+
+  $("formPw").onsubmit = async function (e) {
+    e.preventDefault();
+    var pw = $("nuovaPw").value;
+    if (pw.length < 8) { $("msgPw").textContent = "Minimo 8 caratteri."; $("msgPw").className = "err"; return; }
+    var r = await MA.sb.auth.updateUser({ password: pw });
+    $("msgPw").textContent = r.error ? "Non è stato possibile cambiare la password." : "Password aggiornata.";
+    $("msgPw").className = r.error ? "err" : "ok";
+    if (!r.error) $("nuovaPw").value = "";
+  };
+
+  // ------------------------------------------------------------ LISTA TITOLI
+  async function caricaLista() {
+    var r = await MA.sb.from("watchlist").select("ticker,tipo").eq("user_id", S.utente.id);
+    S.wl = (r.data || []).slice().sort(function (a, b) { return a.ticker < b.ticker ? -1 : 1; });
+    if (!S.imp.inizializzato) {
+      // Prima visita: ETF e Crescita di partenza (azioni vuote, scegli tu)
+      var righe = [];
+      DEFAULT_ETF.forEach(function (t) { righe.push({ user_id: S.utente.id, ticker: t, tipo: "etf" }); });
+      DEFAULT_CRESCITA.forEach(function (t) { righe.push({ user_id: S.utente.id, ticker: t, tipo: "crescita" }); });
+      if (S.wl.length === 0) await MA.sb.from("watchlist").insert(righe);
+      var base = leggiImp();
+      await MA.sb.from("impostazioni_rischio").upsert(base, { onConflict: "user_id" });
+      S.imp = base;
+      var r2 = await MA.sb.from("watchlist").select("ticker,tipo").eq("user_id", S.utente.id);
+      S.wl = (r2.data || []).slice().sort(function (a, b) { return a.ticker < b.ticker ? -1 : 1; });
+    }
+  }
+
+  function tipoDi(t) { for (var i = 0; i < S.wl.length; i++) if (S.wl[i].ticker === t) return S.wl[i].tipo; return "azioni"; }
+
+  function renderChips() {
+    ["azioni", "etf", "crescita"].forEach(function (tipo) {
+      var el = $("chips-" + tipo);
+      var arr = S.wl.filter(function (x) { return x.tipo === tipo; });
+      el.innerHTML = arr.length ? arr.map(function (x) {
+        return '<span class="chip">' + esc(x.ticker) + ' <button type="button" data-del="' + esc(x.ticker) + '" aria-label="Rimuovi ' + esc(x.ticker) + '">✕</button></span>';
+      }).join("") : '<span class="muted">nessuno</span>';
+    });
+    document.querySelectorAll("[data-del]").forEach(function (b) {
+      b.onclick = async function () {
+        var t = b.getAttribute("data-del");
+        await MA.sb.from("watchlist").delete().eq("user_id", S.utente.id).eq("ticker", t);
+        delete S.ris[t]; delete S.err[t];
+        await caricaLista(); renderTutto();
+      };
+    });
+    renderPacchetti();
+    $("btnAnalizzaTutto").textContent = "Analizza tutta la lista (" + S.wl.length + (S.wl.length === 1 ? " uso)" : " usi)");
+  }
+
+  $("formTicker").onsubmit = async function (e) {
+    e.preventDefault();
+    var t = $("nuovoTicker").value.trim().toUpperCase();
+    var msg = $("msgLista");
+    var esatto = (window.MA_CATALOGO || []).some(function (x) { return x[0] === t; });
+    if (!esatto) {
+      // ricerca per nome: se il testo coincide col nome di un solo titolo del catalogo, lo uso
+      var q = $("nuovoTicker").value.trim().toLowerCase();
+      var perNome = q.length < 3 ? [] : (window.MA_CATALOGO || []).filter(function (x) { return x[1].toLowerCase().indexOf(q) !== -1; });
+      if (perNome.length === 1) { t = perNome[0][0]; $("nuovoTipo").value = perNome[0][2]; }
+      else if (perNome.length > 1) { msg.textContent = "Più risultati: scegline uno dall'elenco qui sopra."; msg.className = "err"; mostraSuggerimenti(); return; }
+    }
+    if (!/^[A-Z0-9.\-]{1,12}$/.test(t)) { msg.textContent = "Ticker non valido (lettere/numeri, max 12)."; msg.className = "err"; return; }
+    if (S.wl.some(function (x) { return x.ticker === t; })) { msg.textContent = t + " è già nella lista."; msg.className = "err"; return; }
+    if (S.wl.length >= 500) { msg.textContent = "Limite di 500 titoli raggiunto."; msg.className = "err"; return; }
+    var r = await MA.sb.from("watchlist").insert({ user_id: S.utente.id, ticker: t, tipo: $("nuovoTipo").value });
+    if (r.error) { msg.textContent = "Non è stato possibile aggiungere " + t + "."; msg.className = "err"; return; }
+    $("nuovoTicker").value = ""; msg.textContent = t + " aggiunto."; msg.className = "ok";
+    await caricaLista(); renderTutto();
+  };
+
+  // ------------------------------------------------------------ RICERCA NEL CATALOGO
+  function cercaCatalogo(q) {
+    q = String(q || "").trim().toLowerCase();
+    if (q.length < 2) return [];
+    var cat = window.MA_CATALOGO || [];
+    var ris = cat.filter(function (x) { return x[0].toLowerCase().indexOf(q) === 0 || x[1].toLowerCase().indexOf(q) !== -1; });
+    ris.sort(function (a, b) { return (b[0].toLowerCase() === q) - (a[0].toLowerCase() === q) || (b[0].toLowerCase().indexOf(q) === 0) - (a[0].toLowerCase().indexOf(q) === 0); });
+    return ris.slice(0, 8);
+  }
+  function mostraSuggerimenti() {
+    var el = $("suggerimenti"), r = cercaCatalogo($("nuovoTicker").value);
+    if (!r.length) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+    el.classList.remove("hidden");
+    el.innerHTML = r.map(function (x) {
+      var gia = S.wl.some(function (w) { return w.ticker === x[0]; });
+      return '<button type="button" class="sec sugg-voce" data-t="' + esc(x[0]) + '" data-tipo="' + esc(x[2]) + '"' + (gia ? " disabled" : "") + '><b>' + esc(x[0]) + "</b> " + esc(x[1]) + ' <span class="muted">(' + esc(x[2]) + (gia ? ", già in lista" : "") + ")</span></button>";
+    }).join("");
+    el.querySelectorAll("[data-t]").forEach(function (b) {
+      b.onclick = function () {
+        $("nuovoTicker").value = b.getAttribute("data-t"); $("nuovoTipo").value = b.getAttribute("data-tipo");
+        el.classList.add("hidden"); $("formTicker").requestSubmit ? $("formTicker").requestSubmit() : $("formTicker").dispatchEvent(new Event("submit", { cancelable: true }));
+      };
+    });
+  }
+  $("nuovoTicker").oninput = mostraSuggerimenti;
+
+  function renderPacchetti() {
+    var P = window.MA_PACCHETTI || {};
+    $("pacchetti").innerHTML = Object.keys(P).map(function (k) {
+      var mancanti = P[k].voci.filter(function (v) { return !S.wl.some(function (w) { return w.ticker === v[0]; }); }).length;
+      return '<button type="button" class="sec" data-pk="' + esc(k) + '"' + (mancanti ? "" : " disabled") + ">" + esc(P[k].nome) + " (+" + mancanti + ")</button>";
+    }).join("");
+    $("pacchetti").querySelectorAll("[data-pk]").forEach(function (b) {
+      b.onclick = async function () {
+        var pk = P[b.getAttribute("data-pk")];
+        var nuovi = pk.voci.filter(function (v) { return !S.wl.some(function (w) { return w.ticker === v[0]; }); });
+        var posto = 500 - S.wl.length;
+        if (nuovi.length > posto) { $("msgLista").textContent = "Limite di 500 titoli: puoi aggiungerne ancora " + posto + "."; $("msgLista").className = "err"; return; }
+        var righe = nuovi.map(function (v) { return { user_id: S.utente.id, ticker: v[0], tipo: v[1] }; });
+        var r = await MA.sb.from("watchlist").insert(righe);
+        $("msgLista").textContent = r.error ? "Non è stato possibile aggiungere il pacchetto." : "Aggiunti " + nuovi.length + " titoli.";
+        $("msgLista").className = r.error ? "err" : "ok";
+        await caricaLista(); renderTutto();
+      };
+    });
+  }
+
+  // ------------------------------------------------------------ ANALISI
+  function ripristinaCache() {
+    try {
+      var j = JSON.parse(localStorage.getItem("ma_ris_" + S.utente.id) || "null");
+      if (j && j.ris) { S.ris = j.ris; S.ultimaData = j.ts; }
+    } catch (e) { /* ignora */ }
+  }
+  function salvaCache() {
+    try { S.ultimaData = new Date().toISOString(); localStorage.setItem("ma_ris_" + S.utente.id, JSON.stringify({ ts: S.ultimaData, ris: S.ris })); } catch (e) { /* ignora */ }
+  }
+
+  function parametri() { return { tp: S.imp.take_profit, sl: S.imp.stop_loss, comm: S.imp.commissione, spread: S.imp.spread }; }
+
+  async function analizzaUno(ticker) {
+    var tentativi = 0;
+    while (true) {
+      var body = parametri(); body.ticker = ticker;
+      var r = await MA.chiama("analizza", body);
+      if (r.ok) return r;
+      if (r.codice === "LIMITE_MINUTO" && tentativi < 3) {
+        tentativi++;
+        $("progresso").innerHTML = '<span class="spinner"></span>Limite del servizio dati: attendo ' + (r.riprova_tra || 20) + ' secondi…';
+        await MA.attendi(((r.riprova_tra || 20) * 1000));
+        continue;
+      }
+      return r;
+    }
+  }
+
+  var FERMANTI = ["NESSUNA_CHIAVE", "DISATTIVATA", "SCADUTA", "USI_ESAURITI", "NON_AUTENTICATO", "NON_AUTENTICATO", "LIMITE_GIORNALIERO", "CONFIG"];
+
+  async function analizzaLista(tickers) {
+    if (S.inCorso) return;
+    if (statoChiave() !== "ok") { $("progresso").textContent = "Accesso non attivo."; return; }
+    if (!tickers.length) { $("progresso").textContent = "Nessun titolo da analizzare."; return; }
+    if (tickers.length > S.chiave.usi_rimasti) {
+      $("progresso").textContent = "Servono " + tickers.length + " usi ma te ne restano " + S.chiave.usi_rimasti + ". Riduci la lista o chiedi una ricarica.";
+      return;
+    }
+    if (!window.confirm("Verranno usati " + tickers.length + " usi (te ne restano " + S.chiave.usi_rimasti + "). Procedere?")) return;
+    S.inCorso = true; renderStato();
+    var fatti = 0;
+    for (var i = 0; i < tickers.length; i++) {
+      var t = tickers[i];
+      $("progresso").innerHTML = '<span class="spinner"></span>Analisi ' + (i + 1) + "/" + tickers.length + ": " + esc(t);
+      var r = await analizzaUno(t);
+      if (r.ok) {
+        S.ris[t] = r; delete S.err[t]; fatti++;
+        if (S.chiave) S.chiave.usi_rimasti = r.usi_rimasti;
+        // rispetto del limite del servizio dati solo se il dato e' stato scaricato ora
+        var fresco = r.dati_del && (Date.now() - new Date(r.dati_del).getTime()) < 60000;
+        if (fresco && i < tickers.length - 1 && MA.C.PAUSA_MS > 0) {
+          $("progresso").innerHTML = '<span class="spinner"></span>Analisi ' + (i + 1) + "/" + tickers.length + ": " + esc(t) + " — pausa per il limite del servizio dati";
+          await MA.attendi(MA.C.PAUSA_MS);
+        }
+      } else {
+        S.err[t] = r.errore || "Errore";
+        if (typeof r.usi_rimasti === "number" && S.chiave) S.chiave.usi_rimasti = r.usi_rimasti;
+        if (FERMANTI.indexOf(r.codice) >= 0) { $("progresso").textContent = r.errore; break; }
+      }
+      renderStato(); renderRisultati();
+    }
+    S.inCorso = false;
+    salvaCache();
+    await caricaChiave();
+    $("progresso").textContent = "Completato: " + fatti + " analisi su " + tickers.length + ". " + (S.ultimaData ? "Aggiornato il " + MA.data(S.ultimaData, true) : "");
+    renderTutto();
+    controllaAllarmi(true);
+  }
+
+  $("btnAnalizzaTutto").onclick = function () { analizzaLista(S.wl.map(function (x) { return x.ticker; })); };
+  $("btnAggiornaPf").onclick = function () { analizzaLista(S.pf.map(function (x) { return x.ticker; })); };
+
+  // ------------------------------------------------------------ CALCOLI SU RISULTATI
+  function dimensiona(a) {
+    var cap = S.imp.capitale, rischio = cap * S.imp.rischio_pct / 100;
+    var dist = a.atr14 ? 2 * a.atr14 : a.prezzo * S.imp.stop_loss / 100;
+    if (!(dist > 0) || !(a.prezzo > 0)) return null;
+    var qta = Math.min(Math.floor(rischio / dist), Math.floor(cap / a.prezzo));
+    return { qta: Math.max(0, qta), rischio: rischio, dist: dist, costo: Math.max(0, qta) * a.prezzo };
+  }
+
+  function etichettaStato(s) {
+    return { ipervenduto: "Ipervenduto: possibile rimbalzo", forte: "Trend rialzista confermato", neutro: "Neutro", debole: "Trend debole" }[s] || s;
+  }
+
+  var LIV = { alta: "alta", media: "media", bassa: "bassa", insufficiente: "insufficiente" };
+  var ORD = { alta: 3, media: 2, bassa: 1, insufficiente: 0 };
+  function sg(n, d) {
+    if (n === null || n === undefined || !isFinite(n)) return "n/d";
+    d = d === undefined ? 0 : d;
+    var r = Math.round(n * Math.pow(10, d)) / Math.pow(10, d);
+    return (r > 0 ? "+" : "") + fmt(r === 0 ? 0 : r, d);
+  }
+  function wilson(k, n) {
+    if (!n) return null;
+    var z = 1.96, p = k / n, den = 1 + z * z / n, c = (p + z * z / (2 * n)) / den, m = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den;
+    return { low: Math.max(0, c - m) * 100, high: Math.min(1, c + m) * 100 };
+  }
+  function btRilevante(a) { return a.stato === "ipervenduto" ? a.backtestRib : a.backtest; }
+  function dettagli(a) {
+    var bt = btRilevante(a);
+    if (!bt) return "";
+    var h = '<details style="margin-top:6px"><summary><span class="tag aff-' + esc(bt.affidabilita) + '">Affidabilità storica: ' + LIV[bt.affidabilita] + '</span> perché?</summary><div class="muted" style="margin-top:6px">' +
+      bt.motivi.map(esc).join("; ") + ".<br>";
+    if (bt.n) {
+      h += "Ultimi 12 mesi: " + (bt.oos.n ? fmt(bt.oos.pct, 0) + "% su " + bt.oos.n + " casi" : "nessun caso") + " · prima: " + (bt.prima.n ? fmt(bt.prima.pct, 0) + "% su " + bt.prima.n + " casi" : "nessun caso") + ".<br>";
+      if (bt.vsCaso) h += "Entrate a caso: successo medio " + fmt(bt.vsCaso.mediaCaso, 0) + "%. Vantaggio sul caso: p = " + fmt(bt.vsCaso.pValue, 2) + " (più è basso, più è netto).<br>";
+      h += "Rendimento medio per operazione: " + sg(bt.attesa, 1) + "% netto dei costi.<br>";
+      if (bt.anniTotali) h += "Anni con rendimento positivo: " + bt.anniPositivi + " su " + bt.anniTotali + ".<br>";
+      h += "«Compra e tieni» sullo stesso storico: " + sg(a.buyHold.rendimento) + "% (calo massimo " + fmt(a.buyHold.maxDD, 0) + "%). Questo segnale: " + sg(bt.composto) + "% composto (calo massimo " + fmt(bt.maxDD, 0) + "%, in posizione il " + fmt(bt.tempoInvestito, 0) + "% del tempo).";
+    }
+    return h + "</div></details>";
+  }
+
+  function testoBacktest(bt, nome) {
+    if (!bt || !bt.n) return '<span class="muted">' + nome + ': storico insufficiente</span>';
+    var affid = bt.n < 10 ? ' <span class="err">(pochi casi: poco affidabile)</span>' : "";
+    return nome + ": <b>" + fmt(bt.pct, 0) + "%</b> su " + bt.n + " casi simulati (intervallo 95%: " + fmt(bt.low, 0) + "–" + fmt(bt.high, 0) + "%)" + affid;
+  }
+
+  function grafico(serie) {
+    if (!serie || serie.length < 2) return "";
+    var W = 300, H = 70, vals = [];
+    serie.forEach(function (p) { vals.push(p.c); if (p.s) vals.push(p.s); });
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals), sp = (mx - mn) || 1;
+    var x = function (i) { return (i / (serie.length - 1)) * W; };
+    var y = function (v) { return H - 4 - ((v - mn) / sp) * (H - 8); };
+    var pc = serie.map(function (p, i) { return x(i).toFixed(1) + "," + y(p.c).toFixed(1); }).join(" ");
+    var ps = serie.filter(function (p) { return p.s; }).map(function (p) { return x(serie.indexOf(p)).toFixed(1) + "," + y(p.s).toFixed(1); }).join(" ");
+    return '<svg class="grafico" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" role="img" aria-label="Ultimi 90 giorni">' +
+      '<polyline fill="none" stroke="var(--buy)" stroke-width="1.6" points="' + pc + '"/>' +
+      (ps ? '<polyline fill="none" stroke="var(--amber)" stroke-width="1" stroke-dasharray="4 3" points="' + ps + '"/>' : "") + "</svg>";
+  }
+
+  function scheda(a) {
+    var d = dimensiona(a);
+    var h = '<div class="card ' + esc(a.stato) + '" data-card="' + esc(a.ticker) + '"><div><b>' + esc(a.ticker) + '</b> · ' + fmt(a.prezzo) + ' <span class="muted">(' + esc(a.ultima) + ")</span></div>" +
+      '<div style="margin-top:4px">' + (oz(a) ? '<span class="tag ' + VCLS[oz(a).verdetto] + '">' + ORIZ[S.orizzonte].nome + ": " + VERD[oz(a).verdetto] + "</span>" : "") + '<span class="tag ' + esc(a.stato) + '">' + etichettaStato(a.stato) + '</span><span class="tag">punteggio ' + a.punteggio + "/4</span>" +
+      (a.confermato ? '<span class="tag forte">confermato 3 giorni</span>' : "") +
+      (a.volumeConfermato ? '<span class="tag forte">volume alto</span>' : "") + "</div>" +
+      '<div class="kv"><span>SMA50</span><span>' + fmt(a.sma50) + " (" + (a.distanza >= 0 ? "+" : "") + fmt(a.distanza, 1) + "%)</span>" +
+      "<span>SMA200</span><span>" + fmt(a.sma200) + "</span>" +
+      "<span>RSI14</span><span>" + fmt(a.rsi, 1) + "</span>" +
+      "<span>ADX14</span><span>" + fmt(a.adx14, 1) + "</span>" +
+      "<span>ATR14</span><span>" + fmt(a.atr14) + " (" + fmt(a.atrPct, 1) + "%)</span>" +
+      "<span>Volume vs media 20gg</span><span>" + (a.volume === null ? "n/d" : fmt(a.volume, 2) + "x") + "</span>" +
+      "<span>Obiettivo +" + fmt(a.targetPct, 1) + "%</span><span>" + fmt(a.prezzoTarget) + "</span>" +
+      "<span>Stop " + S.imp.stop_loss + "%</span><span>" + fmt(a.prezzoStop) + "</span>" +
+      "<span>Stop ATR (2×)</span><span>" + fmt(a.stopAtr) + "</span></div>" +
+      '<div class="muted">' + testoBacktest(a.backtest, "Trend (storico simulato)") + "<br>" + testoBacktest(a.backtestRib, "Dopo ribasso (storico simulato)") + "</div>" +
+      (a.avvisi && a.avvisi.length ? '<div class="nota">' + a.avvisi.map(esc).join("<br>") + "</div>" : "") + dettagli(a) +
+      (d ? '<div class="muted" style="margin-top:6px">Dimensione indicativa col tuo rischio: <b>' + d.qta + "</b> unità (≈ " + fmt(d.costo, 0) + ", rischio ≈ " + fmt(d.rischio, 0) + ").</div>" : "") +
+      grafico(a.serie) + studio(a) + "</div>";
+    return h;
+  }
+
+  function rankRibasso(a) {
+    var b = a.backtestRib;
+    if (!b) return -1;
+    return (ORD[b.affidabilita] || 0) * 1000 + (b.n && b.low !== null ? b.low : 0);
+  }
+
+
+  // ------------------------------------------------------------ ORIZZONTE DI INVESTIMENTO
+  var ORIZ = {
+    breve: { nome: "Breve", sub: "circa 1 mese", desc: "Per chi ragiona in poche settimane. Pesa lo slancio recente (media a 20 giorni, RSI, ultimo mese). Le oscillazioni di breve periodo sono le più casuali: l'affidabilità dello studio è di solito la più bassa." },
+    medio: { nome: "Medio", sub: "circa 3 mesi", desc: "Per chi ragiona in alcuni mesi. Pesa il trend (media a 50 e 200 giorni, ultimi 3 mesi, ADX). È l'orizzonte con più dati utili nello storico." },
+    lungo: { nome: "Lungo", sub: "circa 1 anno", desc: "Per chi ragiona in anni. Pesa il trend di fondo (media a 200 giorni, ultimo anno, distanza dal massimo). Lo storico contiene pochi periodi indipendenti: lo studio è utile ma poco affidabile." }
+  };
+  var VERD = { favorevole: "Segnale tecnico favorevole", neutro: "Neutro", sfavorevole: "Sfavorevole: da evitare secondo le regole", non_valutabile: "Dati insufficienti" };
+  var VCLS = { favorevole: "fav", neutro: "neutro", sfavorevole: "sfav", non_valutabile: "nv" };
+  var NOMI = {};
+  (window.MA_CATALOGO || []).forEach(function (x) { NOMI[x[0]] = x[1]; });
+
+  function renderOrizzonte() {
+    $("orizzonteBtns").innerHTML = ["breve", "medio", "lungo"].map(function (k) {
+      return '<button type="button" data-oz="' + k + '" class="' + (S.orizzonte === k ? "on" : "sec") + '">' + ORIZ[k].nome + " · " + ORIZ[k].sub + "</button>";
+    }).join("");
+    $("orizzonteDesc").textContent = ORIZ[S.orizzonte].desc;
+    document.querySelectorAll("[data-oz]").forEach(function (b) {
+      b.onclick = function () {
+        S.orizzonte = b.getAttribute("data-oz");
+        try { localStorage.setItem("ma_orizzonte", S.orizzonte); } catch (e) { /* ignora */ }
+        renderOrizzonte(); renderRisultati();
+      };
+    });
+  }
+
+  function oz(a) { return a && a.orizzonti ? a.orizzonti[S.orizzonte] : null; }
+  function statUsata(o) { return o.storico.usato === "simili" && o.storico.simili ? o.storico.simili : o.storico.tutti; }
+
+  function svgVentaglio(v) {
+    if (!v || !v.passi || v.passi.length < 2) return "";
+    var W = 300, H = 120, tutti = [].concat(v.p10, v.p90, v.esempi.basso, v.esempi.alto);
+    var mn = Math.min.apply(null, tutti), mx = Math.max.apply(null, tutti), sp = (mx - mn) || 1, ult = v.passi[v.passi.length - 1];
+    var X = function (g) { return (g / ult) * W; }, Y = function (p) { return H - 6 - ((p - mn) / sp) * (H - 12); };
+    var pts = function (arr) { return arr.map(function (p, i) { return X(v.passi[i]).toFixed(1) + "," + Y(p).toFixed(1); }).join(" "); };
+    var banda = v.p90.map(function (p, i) { return X(v.passi[i]).toFixed(1) + "," + Y(p).toFixed(1); }).concat(v.p10.map(function (p, i) { return [X(v.passi[i]).toFixed(1), Y(p).toFixed(1)].join(","); }).reverse()).join(" ");
+    return '<svg class="ventaglio" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" role="img" aria-label="Simulazione dell\'andamento: fascia tra il 10° e il 90° percentile e tre percorsi di esempio">' +
+      '<polygon points="' + banda + '" fill="var(--amber)" opacity="0.18"/>' +
+      '<polyline fill="none" stroke="var(--amber)" stroke-width="1" stroke-dasharray="4 3" points="' + pts(v.p50) + '"/>' +
+      '<polyline fill="none" stroke="var(--sell)" stroke-width="1.2" points="' + pts(v.esempi.basso) + '"/>' +
+      '<polyline fill="none" stroke="var(--muted)" stroke-width="1.2" points="' + pts(v.esempi.centrale) + '"/>' +
+      '<polyline fill="none" stroke="var(--buy)" stroke-width="1.2" points="' + pts(v.esempi.alto) + '"/></svg>';
+  }
+
+  function studio(a) {
+    var o = oz(a);
+    if (!o) return '<div class="studio muted">Studio per orizzonte non disponibile per questa analisi: rianalizza il titolo.</div>';
+    var u = statUsata(o), v = o.ventaglio, h = '<div class="studio"><b>Studio · ' + ORIZ[S.orizzonte].nome + " termine (" + ORIZ[S.orizzonte].sub + ")</b><div style=\"margin:4px 0\">" +
+      '<span class="tag ' + VCLS[o.verdetto] + '">' + VERD[o.verdetto] + '</span><span class="tag aff-' + esc(o.affidabilita) + '">affidabilità studio: ' + esc(o.affidabilita) + '</span><span class="tag">punteggio ' + o.punteggio + "/4</span></div>";
+    h += "<ul>" + o.criteri.map(function (c) { return "<li>" + (c.ok === true ? "✓ " : c.ok === false ? "✗ " : "– ") + esc(c.t) + "</li>"; }).join("") + "</ul>";
+    if (u && u.n) {
+      h += "<div><b>Cosa è successo in passato</b> (" + (o.storico.usato === "simili" ? "dopo giorni simili a oggi: " + esc(o.storico.profilo) : "dopo qualsiasi giorno dello storico") + "): " +
+        "dopo " + o.giorni + " giorni di borsa il prezzo era più alto nel <b>" + fmt(u.pPositivi, 0) + "%</b> dei casi; " +
+        "variazione mediana " + sg(u.mediana, 1) + "%; nell'80% dei casi tra " + sg(u.p10, 1) + "% e " + sg(u.p90, 1) + "%; peggior caso " + sg(u.peggiore, 0) + "%, migliore " + sg(u.migliore, 0) + "%. " +
+        "Periodi indipendenti: " + u.indipendenti + ".</div>";
+    }
+    if (v) {
+      h += "<div style=\"margin-top:6px\"><b>Esempio di andamento possibile</b> (simulazione con le oscillazioni degli ultimi " + fmt(v.campioni / 252, 1) + " anni, senza ipotizzare alcuna tendenza): " +
+        "tra " + o.giorni + " giorni il prezzo starebbe tra <b>" + fmt(a.prezzo * (1 + v.finale.p10 / 100)) + "</b> (" + sg(v.finale.p10, 0) + "%) e <b>" + fmt(a.prezzo * (1 + v.finale.p90 / 100)) + "</b> (" + sg(v.finale.p90, 0) + "%) nell'80% dei casi. " +
+        "Fascia colorata = 80% dei casi, linea tratteggiata = valore centrale (parte dal prezzo di oggi, per costruzione); rosso, grigio e verde = tre percorsi simulati. Volatilità annua ≈ " + fmt(v.volAnnua, 0) + "%.</div>" + svgVentaglio(v);
+    }
+    if (o.motivi && o.motivi.length) h += '<div class="muted" style="margin-top:4px">Note: ' + o.motivi.map(esc).join("; ") + ".</div>";
+    return h + '<div class="muted" style="margin-top:4px">Statistica sul passato e simulazione: non sono previsioni né consigli personalizzati.</div></div>';
+  }
+
+  function ordClass(t1, t2) {
+    var a = oz(S.ris[t1]), b = oz(S.ris[t2]);
+    var sa = statUsata(a), sb = statUsata(b);
+    return (ORD[b.affidabilita] - ORD[a.affidabilita]) || (b.punteggio - a.punteggio) || ((sb.pPositivi || 0) - (sa.pPositivi || 0)) || ((sb.mediana || 0) - (sa.mediana || 0));
+  }
+
+  function righeClassifica(ts) {
+    return '<table class="classifica"><thead><tr><th>Titolo</th><th>Punt.</th><th>Salito in passato</th><th>Mediana</th><th>80% dei casi</th><th>Affid.</th></tr></thead><tbody>' +
+      ts.map(function (t) {
+        var o = oz(S.ris[t]), u = statUsata(o);
+        return '<tr data-vai="' + esc(t) + '"><td><b>' + esc(t) + '</b><div class="muted">' + esc(NOMI[t] || "") + "</div></td><td>" + o.punteggio + "/4</td><td>" + (u.n ? fmt(u.pPositivi, 0) + "%" : "n/d") + "</td><td>" + (u.n ? sg(u.mediana, 1) + "%" : "n/d") + "</td><td style=\"white-space:nowrap\">" +
+          (u.n ? sg(u.p10, 0) + "% / " + sg(u.p90, 0) + "%" : "n/d") + '</td><td><span class="tag aff-' + esc(o.affidabilita) + '">' + esc(o.affidabilita) + "</span></td></tr>";
+      }).join("") + "</tbody></table>";
+  }
+
+  function renderClassifica() {
+    var box = $("boxClassifica");
+    var tickers = Object.keys(S.ris).filter(function (t) { return S.wl.some(function (x) { return x.ticker === t; }); });
+    if (!tickers.length) { box.innerHTML = ""; return; }
+    var g = { favorevole: [], neutro: [], sfavorevole: [], non_valutabile: [] }, senza = 0;
+    tickers.forEach(function (t) { var o = oz(S.ris[t]); if (!o) senza++; else g[o.verdetto].push(t); });
+    g.favorevole.sort(ordClass);
+    g.neutro.sort(ordClass);
+    g.sfavorevole.sort(function (a, b) { return ordClass(b, a); });
+    var MAXR = 25;
+    function blocco(titolo, nota, arr, aperto) {
+      if (!arr.length) return "";
+      var visibili = arr.slice(0, MAXR), resto = arr.slice(MAXR);
+      return "<details" + (aperto ? " open" : "") + '><summary><b>' + titolo + " (" + arr.length + ")</b></summary><div class=\"muted\" style=\"margin:4px 0\">" + nota + "</div>" + righeClassifica(visibili) +
+        (resto.length ? "<details><summary class=\"muted\">Mostra gli altri " + resto.length + "</summary>" + righeClassifica(resto) + "</details>" : "") + "</details>";
+    }
+    var h = "<section><h2>Classifica · " + ORIZ[S.orizzonte].nome + " termine (" + ORIZ[S.orizzonte].sub + ")</h2>" +
+      '<div class="muted" style="margin-bottom:8px">Quattro regole sul trend + studio storico: favorevole = almeno 3 criteri su 4 e, in passato, prezzo salito dopo ' + (S.orizzonte === "breve" ? "1 mese" : S.orizzonte === "medio" ? "3 mesi" : "1 anno") +
+      ' in oltre il 55% dei casi con mediana positiva. Sfavorevole = al massimo 1 criterio senza uno storico chiaramente positivo, oppure storico negativo. L\'ordine premia prima l\'affidabilità dello studio. Sono segnali tecnici basati sul passato: non garantiscono guadagni e non sono consigli personalizzati.</div>' +
+      blocco("Segnale favorevole", "Dove le regole e lo storico sono favorevoli.", g.favorevole, true) +
+      blocco("Sfavorevoli: da evitare secondo le regole", "Trend debole e/o storico negativo.", g.sfavorevole, true) +
+      blocco("Neutri", "Segnali misti.", g.neutro, false) +
+      (g.non_valutabile.length ? '<div class="muted" style="margin-top:6px">Non valutabili (storico troppo corto o dati insufficienti): ' + g.non_valutabile.map(esc).join(", ") + ".</div>" : "") +
+      (senza ? '<div class="muted" style="margin-top:6px">' + senza + " titoli analizzati prima dell'aggiornamento non hanno ancora lo studio: rianalizzali.</div>" : "") +
+      "</section>";
+    box.innerHTML = h;
+    box.querySelectorAll("[data-vai]").forEach(function (r) {
+      r.onclick = function () {
+        var el = document.querySelector('.card[data-card="' + r.getAttribute("data-vai") + '"]');
+        if (el && el.scrollIntoView) { el.scrollIntoView({ behavior: "smooth", block: "center" }); }
+      };
+    });
+  }
+
+  function renderRisultati() {
+    var tickers = Object.keys(S.ris).filter(function (t) { return S.wl.some(function (x) { return x.ticker === t; }); });
+    var iper = tickers.filter(function (t) { return S.ris[t].stato === "ipervenduto"; })
+      .sort(function (a, b) { return rankRibasso(S.ris[b]) - rankRibasso(S.ris[a]); });
+    var box = $("boxIpervenduti");
+    if (iper.length) {
+      box.innerHTML = '<section><h2>In cima: titoli ipervenduti (ordinati per affidabilità)</h2>' +
+        '<div class="muted" style="margin-bottom:8px">Titoli scesi sotto la media a 50 giorni con RSI basso. L\'ordine premia prima l\'affidabilità storica (casi sufficienti, vantaggio sul caso, tenuta negli ultimi 12 mesi) e poi l\'estremo inferiore dell\'intervallo di confidenza: chi ha più dati, non chi ha avuto fortuna. «Insufficiente» = troppi pochi casi. Non è una previsione.</div>' +
+        '<div class="grid">' + iper.map(function (t, i) { return "<div><div class=\"muted\">#" + (i + 1) + "</div>" + scheda(S.ris[t]) + "</div>"; }).join("") + "</div></section>";
+    } else box.innerHTML = "";
+
+    renderClassifica();
+    var out = "";
+    [["azioni", "Azioni"], ["etf", "ETF"], ["crescita", "Crescita"]].forEach(function (g) {
+      var ts = S.wl.filter(function (x) { return x.tipo === g[0]; }).map(function (x) { return x.ticker; })
+        .filter(function (t) { return S.ris[t] || S.err[t]; })
+        .sort(function (a, b) { return (S.ris[b] ? S.ris[b].punteggio : -1) - (S.ris[a] ? S.ris[a].punteggio : -1); });
+      if (!ts.length) return;
+      out += "<section><h2>" + g[1] + '</h2><div class="grid">' + ts.map(function (t) {
+        return S.ris[t] ? scheda(S.ris[t]) : '<div class="card"><b>' + esc(t) + '</b><div class="err">' + esc(S.err[t]) + "</div></div>";
+      }).join("") + "</div></section>";
+    });
+    if (!out && !iper.length) out = '<div class="muted">Nessuna analisi ancora: premi «Analizza tutta la lista».</div>';
+    var mk = null;
+    tickers.forEach(function (t) { if (S.ris[t].mercato && !mk) mk = S.ris[t].mercato; });
+    var bannerMk = mk && !mk.sopraSma200 ? '<div class="allarme">Mercato generale (' + esc(mk.ticker) + ') sotto la media a 200 giorni (' + sg(mk.distanza, 1) + '%): storicamente i segnali di acquisto hanno un rischio più alto in queste fasi.</div>' : "";
+    $("risultati").innerHTML = bannerMk + out;
+  }
+
+  $("btnCsv").onclick = function () {
+    var righe = [["ticker", "categoria", "prezzo", "sma50", "sma200", "rsi14", "adx14", "atr14", "stato", "punteggio", "backtest_pct", "backtest_n", "affidabilita_trend", "ribasso_pct", "ribasso_n", "affidabilita_ribasso", "p_value_caso_trend", "oos_pct_trend", "verdetto_breve", "verdetto_medio", "verdetto_lungo"]];
+    Object.keys(S.ris).forEach(function (t) {
+      var a = S.ris[t];
+      righe.push([t, tipoDi(t), a.prezzo, a.sma50, a.sma200, a.rsi, a.adx14, a.atr14, a.stato, a.punteggio,
+        a.backtest && a.backtest.pct, a.backtest && a.backtest.n, a.backtest && a.backtest.affidabilita, a.backtestRib && a.backtestRib.pct, a.backtestRib && a.backtestRib.n, a.backtestRib && a.backtestRib.affidabilita, a.backtest && a.backtest.vsCaso && a.backtest.vsCaso.pValue, a.backtest && a.backtest.oos && a.backtest.oos.pct,
+        a.orizzonti && a.orizzonti.breve.verdetto, a.orizzonti && a.orizzonti.medio.verdetto, a.orizzonti && a.orizzonti.lungo.verdetto]);
+    });
+    var csv = righe.map(function (r) { return r.map(function (v) { return v === null || v === undefined ? "" : (typeof v === "number" ? String(Math.round(v * 100) / 100) : '"' + String(v).replace(/"/g, '""') + '"'); }).join(";"); }).join("\r\n");
+    var blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "analisi.csv"; document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  // ------------------------------------------------------------ AFFIDABILITA'
+  async function caricaAffidabilita() {
+    $("boxTrack").textContent = "Caricamento…";
+    var t = await MA.sb.rpc("track_record"), ag = await MA.sb.rpc("statistiche_aggregate");
+    var d = t && t.data;
+    if (!d) { $("boxTrack").textContent = "Dati non disponibili al momento."; $("boxCalib").textContent = ""; }
+    else if (!d.chiusi) {
+      $("boxTrack").innerHTML = "Il registro è appena iniziato: <b>" + (d.aperti || 0) + "</b> segnali aperti, nessun esito ancora (servono fino a 40 giorni).";
+      $("boxCalib").textContent = "Disponibile quando ci saranno esiti.";
+    } else {
+      var w = wilson(d.vinti, d.chiusi);
+      $("boxTrack").innerHTML = "<div class=\"kv\"><span>Segnali con esito</span><span>" + d.chiusi + (d.dal ? " (dal " + MA.data(d.dal) + ")" : "") + "</span>" +
+        "<span>Obiettivo raggiunto</span><span>" + d.vinti + " (" + fmt(d.vinti / d.chiusi * 100, 0) + "%, intervallo 95%: " + fmt(w.low, 0) + "–" + fmt(w.high, 0) + "%)</span>" +
+        "<span>Stop raggiunto</span><span>" + d.persi + "</span><span>Scaduti senza né l'uno né l'altro</span><span>" + d.scaduti + "</span>" +
+        "<span>Rendimento medio per segnale</span><span>" + sg(d.rendimento_medio, 1) + "% (netto dei costi standard)</span>" +
+        "<span>Ancora aperti</span><span>" + d.aperti + "</span></div>" +
+        (d.chiusi < 30 ? '<div class="nota">Pochi esiti: i numeri sono ancora molto instabili.</div>' : "");
+      var righe = d.calibrazione || [];
+      var hc = righe.length ? "<table><thead><tr><th>Fascia dichiarata</th><th>Dichiarato</th><th>Osservato</th><th>Segnali</th></tr></thead><tbody>" +
+        righe.map(function (r) { return "<tr><td>" + r.da + "–" + r.a + "%</td><td>" + fmt(r.previsto, 0) + "%</td><td>" + fmt(r.osservato, 0) + "%</td><td>" + r.n + "</td></tr>"; }).join("") + "</tbody></table>" : "Nessun segnale con percentuale dichiarata.";
+      if (d.brier !== null && d.brier !== undefined) hc += '<div class="muted" style="margin-top:8px">Brier score: <b>' + fmt(d.brier, 3) + "</b> (riferimento «indovinare sempre la media»: " + fmt(d.brier_base, 3) + "; più basso è meglio). " + (d.brier < d.brier_base ? "Migliore del riferimento." : "Non migliore del riferimento: le percentuali dichiarate non aggiungono informazione.") + "</div>";
+      $("boxCalib").innerHTML = hc;
+    }
+    var lista = (ag && ag.data) || [];
+    $("boxAggregate").innerHTML = lista.length ? "<table><thead><tr><th>Regola</th><th>Titoli</th><th>Casi</th><th>Successo</th><th>Intervallo 95%</th></tr></thead><tbody>" +
+      lista.map(function (r) {
+        var n = r.vinti + r.persi + r.scaduti, ww = wilson(r.vinti, n);
+        return "<tr><td>" + (r.tipo === "trend" ? "Trend rialzista" : "Dopo ribasso") + "</td><td>" + r.titoli + "</td><td>" + n + "</td><td>" + (n ? fmt(r.vinti / n * 100, 0) + "%" : "n/d") + "</td><td>" + (ww ? fmt(ww.low, 0) + "–" + fmt(ww.high, 0) + "%" : "n/d") + "</td></tr>";
+      }).join("") + "</tbody></table>" : "Ancora nessun dato: si riempie man mano che i titoli vengono analizzati.";
+  }
+  $("btnAggiornaAff").onclick = caricaAffidabilita;
+
+  // ------------------------------------------------------------ PORTAFOGLIO
+  async function caricaPortafoglio() {
+    var r = await MA.sb.from("portfolio").select("*").eq("user_id", S.utente.id);
+    S.pf = (r.data || []).slice().sort(function (a, b) { return a.ticker < b.ticker ? -1 : 1; });
+  }
+
+  $("formPos").onsubmit = async function (e) {
+    e.preventDefault();
+    var t = $("posTicker").value.trim().toUpperCase();
+    var q = parseFloat($("posQta").value), p = parseFloat($("posPrezzo").value);
+    var msg = $("msgPos");
+    if (!/^[A-Z0-9.\-]{1,12}$/.test(t) || !(q > 0) || !(p > 0)) { msg.textContent = "Controlla ticker, quantità e prezzo."; msg.className = "err"; return; }
+    var riga = { user_id: S.utente.id, ticker: t, quantita: q, prezzo_acquisto: p };
+    if ($("posData").value) riga.data_acquisto = $("posData").value;
+    var r = await MA.sb.from("portfolio").upsert(riga, { onConflict: "user_id,ticker" });
+    if (r.error) { msg.textContent = "Non è stato possibile salvare."; msg.className = "err"; return; }
+    msg.textContent = t + " salvato."; msg.className = "ok";
+    $("formPos").reset();
+    await caricaPortafoglio(); renderTutto();
+  };
+
+  // Segnali tecnici di uscita per una posizione
+  function segnaliUscita(pos) {
+    var a = S.ris[pos.ticker];
+    if (!a) return { livello: "nd", motivi: [] };
+    var m = [], v = false;
+    var acq = Number(pos.prezzo_acquisto), tp = S.imp.take_profit + 2 * S.imp.commissione;
+    if (a.prezzo <= acq * (1 - S.imp.stop_loss / 100)) { m.push("Stop-loss " + S.imp.stop_loss + "% raggiunto"); v = true; }
+    if (a.atr14 && a.prezzo <= acq - 2 * a.atr14) { m.push("Stop ATR raggiunto (acquisto − 2×ATR)"); v = true; }
+    if (a.prezzo >= acq * (1 + tp / 100)) { m.push("Obiettivo +" + fmt(tp, 1) + "% raggiunto: valuta di incassare"); v = true; }
+    var att = false;
+    if (a.prezzo < a.sma50) { m.push("Prezzo sotto la media a 50 giorni"); att = true; }
+    return { livello: v ? "vendi" : (att ? "attenzione" : "ok"), motivi: m };
+  }
+
+  function renderPortafoglio() {
+    if (!S.pf.length) { $("tabellaPf").innerHTML = '<div class="muted">Nessuna posizione. Inseriscile a mano qui sopra.</div>'; $("boxConcentrazione").innerHTML = ""; return; }
+    var tot = 0, righe = S.pf.map(function (p) {
+      var a = S.ris[p.ticker], prezzo = a ? a.prezzo : Number(p.prezzo_acquisto);
+      var val = prezzo * Number(p.quantita); tot += val;
+      return { p: p, a: a, prezzo: prezzo, val: val };
+    });
+    var h = "<table><thead><tr><th>Titolo</th><th>Q.tà</th><th>Acquisto</th><th>Ora</th><th>P&L</th><th>Peso</th><th>Segnale tecnico</th><th></th></tr></thead><tbody>";
+    righe.forEach(function (r) {
+      var pl = (r.prezzo / Number(r.p.prezzo_acquisto) - 1) * 100, sg = segnaliUscita(r.p);
+      var tag = sg.livello === "vendi" ? '<span class="tag vendi">Valuta uscita</span>' : sg.livello === "attenzione" ? '<span class="tag neutro">Attenzione</span>' : sg.livello === "ok" ? '<span class="tag forte">Nessun segnale di uscita</span>' : '<span class="muted">aggiorna per vedere</span>';
+      h += "<tr><td><b>" + esc(r.p.ticker) + "</b></td><td>" + fmt(r.p.quantita, 4) + "</td><td>" + fmt(r.p.prezzo_acquisto) + "</td><td>" + fmt(r.prezzo) + (r.a ? "" : "*") + "</td>" +
+        '<td class="' + (pl >= 0 ? "ok" : "err") + '">' + (pl >= 0 ? "+" : "") + fmt(pl, 1) + "%</td><td>" + fmt(tot ? r.val / tot * 100 : 0, 0) + "%</td><td>" + tag +
+        (sg.motivi.length ? '<div class="muted">' + sg.motivi.map(esc).join("<br>") + "</div>" : "") + '</td><td><button type="button" class="piccolo pericolo" data-delpos="' + esc(r.p.ticker) + '">Rimuovi</button></td></tr>';
+    });
+    h += "</tbody></table><div class=\"muted\" style=\"margin-top:6px\">* prezzo non ancora aggiornato: viene usato il prezzo di acquisto. Valore totale ≈ " + fmt(tot, 0) + ".</div>";
+    $("tabellaPf").innerHTML = h;
+    document.querySelectorAll("[data-delpos]").forEach(function (b) {
+      b.onclick = async function () {
+        await MA.sb.from("portfolio").delete().eq("user_id", S.utente.id).eq("ticker", b.getAttribute("data-delpos"));
+        await caricaPortafoglio(); renderTutto();
+      };
+    });
+
+    // concentrazione
+    var avvisi = [], perSettore = {};
+    righe.forEach(function (r) {
+      var peso = tot ? r.val / tot * 100 : 0;
+      if (peso > 30 && righe.length > 1) avvisi.push(r.p.ticker + " pesa il " + fmt(peso, 0) + "% del portafoglio (soglia 30%).");
+      var tipo = tipoDi(r.p.ticker), sett = tipo === "etf" ? "ETF diversificati" : (SETTORE[r.p.ticker] || "Altro / non classificato");
+      perSettore[sett] = (perSettore[sett] || 0) + peso;
+    });
+    Object.keys(perSettore).forEach(function (s) {
+      if (perSettore[s] > 50 && s !== "ETF diversificati" && s.indexOf("Altro") !== 0) avvisi.push("Il settore «" + s + "» pesa il " + fmt(perSettore[s], 0) + "% (soglia 50%).");
+    });
+    if (righe.length === 1) avvisi.push("Hai una sola posizione: il rischio è concentrato su un solo titolo.");
+    $("boxConcentrazione").innerHTML = avvisi.length ? '<div class="allarme"><b>Avviso di concentrazione</b><br>' + avvisi.map(esc).join("<br>") + '<div class="muted" style="margin-top:6px">Diversificare riduce il rischio di un singolo titolo; non elimina il rischio di mercato.</div></div>' : "";
+  }
+
+  // ------------------------------------------------------------ ALLARMI
+  var giaNotificati = {};
+  function controllaAllarmi(notifica) {
+    var vendi = [];
+    S.pf.forEach(function (p) { var sg = segnaliUscita(p); if (sg.livello === "vendi") vendi.push({ t: p.ticker, m: sg.motivi[0] }); });
+    $("boxAllarmi").innerHTML = vendi.length ? '<div class="allarme" role="alert"><b>Segnali tecnici di uscita sul tuo portafoglio</b><br>' +
+      vendi.map(function (v) { return esc(v.t) + ": " + esc(v.m); }).join("<br>") + '<div class="muted" style="margin-top:6px">Sono regole matematiche (stop e obiettivo), non un consiglio personalizzato.</div></div>' : "";
+    if (notifica && vendi.length && "Notification" in window && Notification.permission === "granted") {
+      vendi.forEach(function (v) {
+        var k = v.t + v.m;
+        if (giaNotificati[k]) return;
+        giaNotificati[k] = 1;
+        try { new Notification("Segnale tecnico: " + v.t, { body: v.m }); } catch (e) { /* ignora */ }
+      });
+    }
+  }
+
+  $("btnNotifiche").onclick = async function () {
+    if (!("Notification" in window)) { $("btnNotifiche").textContent = "Non supportate"; return; }
+    var p = await Notification.requestPermission();
+    $("btnNotifiche").textContent = p === "granted" ? "Notifiche attive (pagina aperta)" : "Notifiche non consentite";
+  };
+
+  // ------------------------------------------------------------ RENDER GENERALE E TAB
+  function renderTutto() {
+    renderStato(); renderChips(); renderOrizzonte(); renderRisultati(); renderPortafoglio(); controllaAllarmi(false);
+  }
+
+  document.querySelectorAll("#menu button").forEach(function (b) {
+    b.onclick = function () {
+      document.querySelectorAll("#menu button").forEach(function (x) { x.className = x === b ? "on" : "sec"; });
+      ["analisi", "portafoglio", "affidabilita", "impostazioni"].forEach(function (t) { show("tab-" + t, t === b.getAttribute("data-tab")); });
+      if (b.getAttribute("data-tab") === "affidabilita") caricaAffidabilita();
+    };
+  });
+
+  // ------------------------------------------------------------ ACCESSO / REGISTRAZIONE
+  function tabAuth(login) {
+    show("formLogin", login); show("formRegistrati", !login);
+    $("tabLogin").className = login ? "on" : "sec"; $("tabRegistrati").className = login ? "sec" : "on";
+    $("authMsg").textContent = "";
+  }
+  $("tabLogin").onclick = function () { tabAuth(true); };
+  $("tabRegistrati").onclick = function () { tabAuth(false); };
+
+  $("formLogin").onsubmit = async function (e) {
+    e.preventDefault();
+    var r = await MA.sb.auth.signInWithPassword({ email: $("loginEmail").value.trim(), password: $("loginPassword").value });
+    if (r.error) { $("authMsg").textContent = "Email o password non corretti."; $("authMsg").className = "err"; return; }
+    await caricaSessione();
+  };
+
+  $("formRegistrati").onsubmit = async function (e) {
+    e.preventDefault();
+    var user = $("regUsername").value.trim(), msg = $("authMsg");
+    if (!/^[A-Za-z0-9_.\-]{3,20}$/.test(user)) { msg.textContent = "Username: 3-20 caratteri, solo lettere, numeri, punto, trattino, underscore."; msg.className = "err"; return; }
+    if ($("regPassword").value.length < 8) { msg.textContent = "Password di almeno 8 caratteri."; msg.className = "err"; return; }
+    if (!$("regTermini").checked) { msg.textContent = "Devi accettare termini e privacy."; msg.className = "err"; return; }
+    var d = await MA.sb.rpc("username_disponibile", { p_username: user });
+    if (d.data === false) { msg.textContent = "Username già in uso: scegline un altro."; msg.className = "err"; return; }
+    var r = await MA.sb.auth.signUp({ email: $("regEmail").value.trim(), password: $("regPassword").value, options: { data: { username: user, termini: "true" } } });
+    if (r.error) { msg.textContent = "Registrazione non riuscita: " + r.error.message; msg.className = "err"; return; }
+    if (!r.data || !r.data.session) { msg.textContent = "Account creato. Controlla la tua email per confermare, poi accedi."; msg.className = "ok"; return; }
+    await caricaSessione();
+  };
+
+  $("linkDimenticata").onclick = async function (e) {
+    e.preventDefault();
+    var mail = $("loginEmail").value.trim(), msg = $("authMsg");
+    if (!mail) { msg.textContent = "Scrivi la tua email nel campo qui sopra, poi premi di nuovo «Password dimenticata?»."; msg.className = "err"; return; }
+    await MA.sb.auth.resetPasswordForEmail(mail, { redirectTo: location.href.split("#")[0].split("?")[0] });
+    msg.textContent = "Se l'email è registrata riceverai un link per scegliere una nuova password (controlla anche lo spam)."; msg.className = "ok";
+  };
+
+  $("formRecupero").onsubmit = async function (e) {
+    e.preventDefault();
+    var pw = $("recPw").value, msg = $("msgRecupero");
+    if (pw.length < 8) { msg.textContent = "Minimo 8 caratteri."; msg.className = "err"; return; }
+    var r = await MA.sb.auth.updateUser({ password: pw });
+    if (r.error) { msg.textContent = "Non è stato possibile salvare la password: il link potrebbe essere scaduto."; msg.className = "err"; return; }
+    S.recupero = false; show("vistaRecupero", false); $("recPw").value = "";
+    try { history.replaceState(null, "", location.pathname); } catch (x) { /* ignora */ }
+    await caricaSessione();
+  };
+
+  avvia();
+  window.__MA_APP = { S: S, analizzaLista: analizzaLista, segnaliUscita: segnaliUscita, dimensiona: dimensiona, renderStato: renderStato, caricaAffidabilita: caricaAffidabilita };
+})();
+</script>
+</body>
+</html>

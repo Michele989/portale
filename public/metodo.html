@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="it" class="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Come funzionano i segnali</title>
+<link rel="stylesheet" href="stile.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="wrap legal">
+<p class="no-print"><a href="index.html">← Torna al servizio</a></p>
+<h1>Come funzionano i segnali (e quali sono i loro limiti)</h1>
+<p class="muted"><span data-nome></span> — metodo, controlli di affidabilità e cosa il servizio non può fare.</p>
+
+<div class="nota"><b>In una frase:</b> il servizio non prevede i prezzi. Misura la situazione tecnica di un titolo con regole fisse e dice quanto, in passato, situazioni simili sono andate bene, con il margine di errore e i controlli che dicono se quel dato è credibile.</div>
+
+<h2>1. Le regole (fisse, non ottimizzate)</h2>
+<ul>
+<li><b>Trend rialzista confermato</b>: prezzo sopra la media a 50 giorni (SMA50) e a 200 (SMA200), RSI tra 50 e 70, ADX ≥ 20, chiusure sopra la SMA50 per 3 giorni di fila e volume non inferiore alla media.</li>
+<li><b>Ipervenduto</b>: prezzo sotto la SMA50 con RSI sotto 35 (discesa rapida: possibile rimbalzo, ma anche possibile proseguimento).</li>
+<li>Le soglie sono quelle classiche e <b>non vengono adattate al passato titolo per titolo</b>: più si «aggiusta» una regola sul passato, più il test sembra bello e meno vale nel futuro.</li>
+</ul>
+
+<h2>2. Il test sul passato (backtest) e come viene reso più onesto</h2>
+<ul>
+<li>Si simula l'ingresso in ogni giorno in cui la regola è vera. Vince chi tocca l'obiettivo (+8% netto) prima dello stop (−8%) entro 40 giorni; se nessuno dei due, conta come non vinto.</li>
+<li><b>Massimi e minimi giornalieri</b>: obiettivo e stop si controllano su tutta la giornata, non solo sulla chiusura. Se nello stesso giorno toccano entrambi si assume la perdita.</li>
+<li><b>Costi</b>: commissioni e spread/slittamento (impostabili) si sommano al traguardo.</li>
+<li><b>Casi indipendenti</b>: una nuova operazione parte solo dopo la fine della precedente, così il numero di casi non viene gonfiato.</li>
+<li><b>Margine di errore</b>: intervallo di confidenza al 95% (metodo di Wilson), corretto anche con pochi casi o con 0% e 100%.</li>
+<li><b>Fuori campione</b>: gli ultimi 12 mesi sono mostrati a parte. Se vanno molto peggio del passato, l'affidabilità scende.</li>
+<li><b>Confronto con il caso</b>: gli stessi calcoli con ingressi casuali (stessa frequenza, stessi costi). Se il segnale non fa nettamente meglio, non ha un vantaggio reale: spesso un buon risultato dipende solo dal fatto che il titolo saliva già.</li>
+<li><b>Confronto con «compra e tieni»</b>, calo massimo (drawdown), rendimento medio per operazione e tenuta anno per anno.</li>
+</ul>
+
+<h2>3. Il livello di affidabilità</h2>
+<ul>
+<li><b>Alta</b>: almeno 30 casi, batte il caso, rendimento medio positivo, nessuna contraddizione negli ultimi 12 mesi, dati regolari.</li>
+<li><b>Media</b>: nessun difetto grave ma casi ancora pochi o vantaggio sul caso non netto.</li>
+<li><b>Bassa</b>: non batte il caso, o rendimento medio non positivo, o crollo negli ultimi 12 mesi, o dati con anomalie.</li>
+<li><b>Insufficiente</b>: meno di 10 casi: nessuna conclusione possibile.</li>
+</ul>
+<p>Con un solo titolo e circa 5 anni di storia i casi sono pochi: per questo esistono anche le <b>statistiche su tutti i titoli</b> (campione molto più ampio).</p>
+
+<h2>4. Controlli sui dati e sul mercato</h2>
+<ul>
+<li>Dati vecchi, buchi nello storico, date duplicate, prezzi incoerenti o salti anomali (possibili frazionamenti non corretti) vengono segnalati; nei casi gravi nulla viene registrato e l'affidabilità è «bassa».</li>
+<li><b>Filtro di mercato</b>: se l'indice generale (SPY) è sotto la media a 200 giorni, i segnali di acquisto sono accompagnati da un avviso di rischio più alto.</li>
+</ul>
+
+<h2>5. Il registro reale dei segnali</h2>
+<p>Ogni segnale emesso viene registrato con data e prezzo e valutato dopo l'esito con regole fisse. La scheda «Affidabilità» mostra i risultati reali, non simulati, e la <b>calibrazione</b>: se il servizio dichiara «60%», dovrebbe riuscire circa 6 volte su 10 (misurato anche con il punteggio di Brier). Se non è così, i numeri dichiarati non vanno presi sul serio e il registro lo mostra.</p>
+
+<h2>5 bis. Lo studio per orizzonte (breve, medio, lungo)</h2>
+<p>Per ogni titolo il servizio calcola tre studi separati: <b>breve</b> (21 giorni di borsa, circa 1 mese), <b>medio</b> (63 giorni, circa 3 mesi) e <b>lungo</b> (252 giorni, circa 1 anno). Tu scegli l'orizzonte che ti interessa; la classifica e la scheda mostrano quello.</p>
+<ul>
+<li><b>Quattro criteri</b> semplici e dichiarati per ogni orizzonte (es. per il medio: prezzo sopra la media a 50 giorni, media a 50 sopra quella a 200, ultimi 3 mesi positivi, ADX almeno 20). Ogni criterio vero vale 1 punto.</li>
+<li><b>Studio storico</b>: per ogni giorno dello storico si guarda il rendimento ottenuto dopo 21, 63 o 252 giorni. Si riportano la % di casi positivi, la variazione mediana, la fascia del 80% centrale dei casi e il peggior caso. Si usano di preferenza i giorni «simili a oggi» (stessa configurazione di indicatori); se sono troppo pochi si usa tutto lo storico.</li>
+<li><b>Periodi indipendenti</b>: le finestre si sovrappongono, quindi un anno di storico non vale 250 osservazioni indipendenti. Si conta quanti periodi non sovrapposti ci sono davvero: l'affidabilità dello studio dipende da questo numero (meno di 4 = insufficiente, 4-7 bassa, 8-19 media, 20 o più alta). Sul lungo termine i periodi sono pochi per costruzione.</li>
+<li><b>Verdetto</b>: <i>favorevole</i> se almeno 3 criteri su 4 sono veri e, in passato, il prezzo è salito in oltre il 55% dei casi con mediana positiva; <i>sfavorevole</i> se al massimo 1 criterio è vero senza uno storico chiaramente positivo, oppure se lo storico è negativo (mediana negativa e meno del 45% di casi positivi); altrimenti <i>neutro</i>.</li>
+<li><b>Esempio di andamento</b>: simulazione di 1000 percorsi con ricampionamento a blocchi (5 giorni) dei rendimenti degli ultimi 3 anni, <i>senza ipotizzare alcuna tendenza</i>: il valore centrale parte quindi dal prezzo di oggi e il ventaglio mostra solo quanto il prezzo può oscillare. Le tre linee colorate sono percorsi simulati scelti vicino al 10°, 50° e 90° percentile finale: sono esempi, non previsioni.</li>
+</ul>
+<p><b>Limiti</b>: il verdetto descrive la situazione tecnica e cosa è successo in passato in situazioni simili; non garantisce che accada di nuovo. Il servizio registra i verdetti per verificarne nel tempo la tenuta reale.</p>
+
+<h2>6. Cosa il servizio non fa</h2>
+<ul>
+<li>Non prevede i prezzi né sa quando un titolo salirà.</li>
+<li>Non conosce notizie, bilanci, dividendi o eventi improvvisi: un gap notturno può superare lo stop.</li>
+<li>Non conosce la tua situazione: non è consulenza personalizzata.</li>
+<li>Non tiene conto di tasse e cambi.</li>
+<li>Le simulazioni usano i dati disponibili (che possono contenere errori) e sono ottimistiche rispetto alla realtà di esecuzione.</li>
+</ul>
+
+<h2>7. Per approfondire (letteratura accademica)</h2>
+<ul>
+<li>Jegadeesh &amp; Titman (1993), «Returns to Buying Winners and Selling Losers»: effetto momentum.</li>
+<li>Faber (2007), «A Quantitative Approach to Tactical Asset Allocation»: media mobile lunga per ridurre i grandi ribassi.</li>
+<li>Bailey, Borwein, López de Prado &amp; Zhu (2014), «Pseudo-Mathematics and Financial Charlatanism»: i rischi dell'ottimizzazione sul passato.</li>
+<li>White (2000), «A Reality Check for Data Snooping»: test contro risultati dovuti al caso.</li>
+</ul>
+<p class="muted">Ultimo aggiornamento: <span data-cfg="ULTIMO_AGGIORNAMENTO_LEGALE"></span> · <a href="istruzioni.html">Istruzioni</a> · <a href="termini.html">Termini</a></p>
+</div>
+<script>
+document.querySelectorAll("[data-cfg]").forEach(function (e) { e.textContent = (window.CONFIG || {})[e.getAttribute("data-cfg")] || ""; });
+document.querySelectorAll("[data-nome]").forEach(function (e) { e.textContent = (window.CONFIG || {}).NOME_SERVIZIO || ""; });
+</script>
+</body>
+</html>

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="it" class="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Pannello amministratore</title>
+<link rel="stylesheet" href="stile.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="comune.js"></script>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <h1>Pannello amministratore</h1>
+  <div class="muted"><a href="index.html">← Area clienti</a> · <span id="chi"></span></div>
+</header>
+
+<div id="msgAccesso" class="allarme hidden"></div>
+
+<div id="pannello" class="hidden">
+
+  <section>
+    <h2>Riepilogo</h2>
+    <div class="kv" id="stats"></div>
+  </section>
+
+  <section>
+    <h2>Crea chiave</h2>
+    <p class="muted">Il cliente si registra e ti comunica il suo <b>username</b>. Scrivilo qui, scegli il piano e premi «Crea chiave»: da quel momento è abilitato. Una chiave nuova sostituisce quella precedente.</p>
+    <form id="formChiave">
+      <div class="row">
+        <div><label for="kUser">Username (o email) del cliente</label>
+          <input id="kUser" list="elencoUtenti" autocomplete="off" required>
+          <datalist id="elencoUtenti"></datalist></div>
+        <div><label for="kUsi">Usi</label><input id="kUsi" type="number" min="1" max="100000" required></div>
+        <div><label for="kGiorni">Validità (giorni, vuoto = senza scadenza)</label><input id="kGiorni" type="number" min="1" max="3650"></div>
+      </div>
+      <div class="row">
+        <div><label for="kCodice">Codice personalizzato (facoltativo)</label><input id="kCodice" placeholder="lascia vuoto per generarlo"></div>
+        <div><label for="kNote">Nota interna (pagamento, contatto…)</label><input id="kNote" maxlength="200"></div>
+      </div>
+      <div id="presets" class="row" style="margin-bottom:8px"></div>
+      <button type="submit" id="btnCrea">Crea chiave</button>
+      <span id="msgCrea" class="muted"></span>
+    </form>
+    <div id="esitoCrea"></div>
+  </section>
+
+  <section>
+    <h2>Utenti e chiavi</h2>
+    <div class="row">
+      <div><input id="cerca" placeholder="Cerca username o email"></div>
+      <div><select id="filtro">
+        <option value="">Tutti</option>
+        <option value="senza">Senza chiave (da abilitare)</option>
+        <option value="attiva">Attivi</option>
+        <option value="esaurimento">In esaurimento (da contattare)</option>
+        <option value="finiti">Usi esauriti o scaduti</option>
+        <option value="disattivata">Disattivati</option>
+      </select></div>
+      <button type="button" id="btnRicarica" class="sec">Ricarica elenco</button>
+    </div>
+    <div class="scroll"><table id="tabella"></table></div>
+    <div id="msgTab" class="muted"></div>
+  </section>
+</div>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = MA.esc;
+  var utenti = [];
+
+  function accessoNegato(testo) {
+    $("msgAccesso").innerHTML = testo; $("msgAccesso").classList.remove("hidden"); $("pannello").classList.add("hidden");
+  }
+
+  async function avvia() {
+    if (!MA.configurato()) { accessoNegato("Sito non configurato: compila config.js."); return; }
+    MA.init();
+    var s = await MA.sb.auth.getSession();
+    var sessione = s && s.data && s.data.session;
+    if (!sessione) { accessoNegato('Devi accedere: <a href="index.html">vai all\'area clienti</a>, entra con l\'account amministratore e torna qui.'); return; }
+    $("chi").textContent = sessione.user.email;
+    var r = await MA.chiama("admin", { azione: "elenco" });
+    if (!r.ok) { accessoNegato(esc(r.errore || "Accesso non consentito.")); return; }
+    $("pannello").classList.remove("hidden");
+    $("msgAccesso").classList.add("hidden");
+    presets();
+    applica(r);
+  }
+
+  function presets() {
+    var h = '<span class="muted" style="flex:0 0 100%">Scorciatoie piano:</span>';
+    MA.C.PIANI.forEach(function (p, i) {
+      h += '<button type="button" class="sec piccolo" data-piano="' + i + '">' + esc(p.nome) + " · " + p.usi + " usi / " + p.giorni + " gg · " + esc(p.prezzo) + "</button>";
+    });
+    $("presets").innerHTML = h;
+    document.querySelectorAll("[data-piano]").forEach(function (b) {
+      b.onclick = function () {
+        var p = MA.C.PIANI[Number(b.getAttribute("data-piano"))];
+        $("kUsi").value = p.usi; $("kGiorni").value = p.giorni;
+        if (!$("kNote").value) $("kNote").value = "Piano " + p.nome + " (" + p.prezzo + ")";
+      };
+    });
+  }
+
+  function applica(r) {
+    utenti = r.utenti || [];
+    var st = r.stats || {};
+    $("stats").innerHTML = "<span>Utenti registrati</span><span>" + (st.utenti || 0) + "</span>" +
+      "<span>Da abilitare (senza chiave)</span><span>" + (st.senza_chiave || 0) + "</span>" +
+      "<span>Chiavi attive utilizzabili</span><span>" + (st.attive || 0) + "</span>" +
+      "<span>Clienti con avvisi email attivi</span><span>" + (st.avvisi_attivi || 0) + "</span>" +
+      "<span>Email di avviso inviate (7 giorni)</span><span>" + (st.avvisi_7gg || 0) + "</span>" +
+      "<span>In esaurimento (≤10% usi o ≤7 giorni)</span><span>" + utenti.filter(inEsaurimento).length + "</span>" +
+      "<span>Usi ancora disponibili</span><span>" + (st.usi_rimasti_totali || 0) + "</span>" +
+      "<span>Usi consumati in totale</span><span>" + (st.usi_consumati_totali || 0) + "</span>";
+    $("elencoUtenti").innerHTML = utenti.map(function (u) { return '<option value="' + esc(u.username) + '">' + esc(u.email) + "</option>"; }).join("");
+    disegna();
+  }
+
+  function stato(u) {
+    var k = u.chiave;
+    if (!k || k.stato === "sostituita") return "senza";
+    if (k.stato === "disattivata") return "disattivata";
+    if (k.scade_il && new Date(k.scade_il).getTime() <= Date.now()) return "scaduta";
+    if (k.usi_rimasti <= 0) return "esaurita";
+    return "attiva";
+  }
+
+  function inEsaurimento(u) {
+    if (stato(u) !== "attiva") return false;
+    var k = u.chiave, giorni = k.scade_il ? (new Date(k.scade_il).getTime() - Date.now()) / 86400000 : null;
+    return k.usi_rimasti <= Math.max(5, Math.round(k.usi_totali * 0.1)) || (giorni !== null && giorni <= 7);
+  }
+
+  function disegna() {
+    var q = $("cerca").value.trim().toLowerCase(), f = $("filtro").value;
+    var righe = utenti.filter(function (u) {
+      var s = stato(u);
+      if (q && u.username.toLowerCase().indexOf(q) < 0 && u.email.toLowerCase().indexOf(q) < 0) return false;
+      if (f === "senza") return s === "senza";
+      if (f === "attiva") return s === "attiva";
+      if (f === "esaurimento") return inEsaurimento(u);
+      if (f === "finiti") return s === "scaduta" || s === "esaurita";
+      if (f === "disattivata") return s === "disattivata";
+      return true;
+    });
+    var etich = { senza: ["Da abilitare", "neutro"], attiva: ["Attiva", "forte"], disattivata: ["Disattivata", "debole"], scaduta: ["Scaduta", "debole"], esaurita: ["Usi esauriti", "debole"] };
+    var h = "<thead><tr><th>Username / email</th><th>Registrato</th><th>Stato</th><th>Usi</th><th>Scadenza</th><th>Ultimo uso</th><th>Chiave</th><th>Azioni</th></tr></thead><tbody>";
+    righe.forEach(function (u) {
+      var s = stato(u), k = u.chiave, e = etich[s];
+      var uid = esc(u.user_id);
+      h += "<tr><td><b>" + esc(u.username) + "</b>" + (u.admin ? ' <span class="tag neutro">admin</span>' : "") + '<div class="muted">' + esc(u.email) + "</div></td>" +
+        "<td>" + MA.data(u.created_at) + '</td><td><span class="tag ' + e[1] + '">' + e[0] + "</span></td>" +
+        "<td>" + (k && k.stato !== "sostituita" ? k.usi_rimasti + " / " + k.usi_totali : "—") + "</td>" +
+        "<td>" + (k && k.stato !== "sostituita" ? (k.scade_il ? MA.data(k.scade_il) : "nessuna") : "—") + "</td>" +
+        "<td>" + (k && k.ultimo_uso_il ? MA.data(k.ultimo_uso_il, true) : "—") + "</td>" +
+        "<td>" + (k && k.stato !== "sostituita" ? "<code>" + esc(k.codice) + "</code>" + (k.note ? '<div class="muted">' + esc(k.note) + "</div>" : "") : "—") + "</td><td>";
+      h += '<button type="button" class="piccolo" data-az="nuova" data-u="' + esc(u.username) + '">' + (k ? "Nuova chiave" : "Crea chiave") + "</button> ";
+      if (k && (k.stato === "attiva")) h += '<button type="button" class="piccolo sec" data-az="usi" data-k="' + k.id + '">+ usi</button> <button type="button" class="piccolo pericolo" data-az="stato" data-k="' + k.id + '" data-s="disattivata">Disattiva</button> ';
+      if (k && k.stato === "disattivata") h += '<button type="button" class="piccolo" data-az="stato" data-k="' + k.id + '" data-s="attiva">Riattiva</button> ';
+      if (!u.admin) h += '<button type="button" class="piccolo sec" data-az="pw" data-id="' + uid + '">Reset password</button> <button type="button" class="piccolo pericolo" data-az="elimina" data-id="' + uid + '" data-u="' + esc(u.username) + '">Elimina</button>';
+      h += "</td></tr>";
+    });
+    if (!righe.length) h += '<tr><td colspan="8" class="muted">Nessun utente.</td></tr>';
+    $("tabella").innerHTML = h + "</tbody>";
+    document.querySelectorAll("[data-az]").forEach(function (b) { b.onclick = function () { azione(b); }; });
+  }
+
+  async function ricarica() {
+    var r = await MA.chiama("admin", { azione: "elenco" });
+    if (r.ok) applica(r); else $("msgTab").textContent = r.errore || "Errore";
+  }
+
+  async function azione(b) {
+    var az = b.getAttribute("data-az"), msg = $("msgTab"), r;
+    msg.className = "muted"; msg.textContent = "";
+    if (az === "nuova") {
+      $("kUser").value = b.getAttribute("data-u"); $("kUsi").focus(); window.scrollTo(0, 0); return;
+    }
+    if (az === "stato") {
+      var nuovo = b.getAttribute("data-s");
+      if (nuovo === "disattivata" && !window.confirm("Disattivare questa chiave? L'utente non potrà più usare il servizio.")) return;
+      r = await MA.chiama("admin", { azione: "imposta_stato", chiave_id: Number(b.getAttribute("data-k")), stato: nuovo });
+    } else if (az === "usi") {
+      var n = window.prompt("Quanti usi aggiungere?", "100");
+      if (n === null) return;
+      var g = window.prompt("Giorni di validità da aggiungere (vuoto = nessuna modifica alla scadenza)", "");
+      r = await MA.chiama("admin", { azione: "aggiungi_usi", chiave_id: Number(b.getAttribute("data-k")), usi: Number(n), giorni: g ? Number(g) : null });
+    } else if (az === "pw") {
+      if (!window.confirm("Generare una password temporanea per questo utente?")) return;
+      r = await MA.chiama("admin", { azione: "reset_password", user_id: b.getAttribute("data-id") });
+      if (r.ok) { window.prompt("Password temporanea (comunicala all'utente, che potrà cambiarla dalle Impostazioni):", r.password); }
+    } else if (az === "elimina") {
+      var nome = b.getAttribute("data-u");
+      if (window.prompt("Operazione IRREVERSIBILE: cancella account, chiavi e dati. Scrivi l'username «" + nome + "» per confermare:") !== nome) return;
+      r = await MA.chiama("admin", { azione: "elimina_utente", user_id: b.getAttribute("data-id") });
+    }
+    if (r && !r.ok) { msg.className = "err"; msg.textContent = r.errore || "Errore"; return; }
+    msg.className = "ok"; msg.textContent = "Fatto.";
+    await ricarica();
+  }
+
+  $("formChiave").onsubmit = async function (e) {
+    e.preventDefault();
+    var btn = $("btnCrea"); btn.disabled = true;
+    var r = await MA.chiama("admin", {
+      azione: "crea_chiave", username: $("kUser").value.trim(), usi: Number($("kUsi").value),
+      giorni: $("kGiorni").value === "" ? null : Number($("kGiorni").value),
+      codice: $("kCodice").value.trim(), note: $("kNote").value.trim()
+    });
+    btn.disabled = false;
+    if (!r.ok) { $("msgCrea").className = "err"; $("msgCrea").textContent = r.errore || "Errore"; return; }
+    $("msgCrea").className = "ok"; $("msgCrea").textContent = "Chiave creata: " + r.username + " è abilitato.";
+    $("esitoCrea").innerHTML = '<div class="nota">Chiave per <b>' + esc(r.username) + "</b>: <code id=\"codiceNuovo\">" + esc(r.codice) + "</code> — " + r.usi + " usi" + (r.giorni ? ", " + r.giorni + " giorni" : ", senza scadenza") +
+      '. Il cliente è già abilitato: non deve inserire nulla. Comunicagli il codice solo come riferimento.</div>';
+    $("formChiave").reset(); presets();
+    await ricarica();
+  };
+
+  $("cerca").oninput = disegna; $("filtro").onchange = disegna;
+  $("btnRicarica").onclick = ricarica;
+  avvia();
+})();
+</script>
+</body>
+</html>

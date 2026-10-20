@@ -1,0 +1,27 @@
+{
+ "compilerOptions": {
+  "target": "ES2022",
+  "module": "ESNext",
+  "moduleResolution": "Bundler",
+  "strict": true,
+  "noEmit": true,
+  "allowImportingTsExtensions": true,
+  "lib": [
+   "ES2022",
+   "DOM"
+  ],
+  "skipLibCheck": true,
+  "types": []
+ },
+ "files": [
+  "stubs/deno.d.ts",
+  "../supabase/functions/analizza/index.ts",
+  "../supabase/functions/admin/index.ts",
+  "../supabase/functions/avvisi/index.ts",
+  "../supabase/functions/disiscrivi/index.ts",
+  "../supabase/functions/_shared/analisi.ts",
+  "../supabase/functions/_shared/avvisi.ts",
+  "../supabase/functions/_shared/email.ts",
+  "../supabase/functions/_shared/dati.ts"
+ ]
+}
