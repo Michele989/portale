@@ -17,8 +17,8 @@ const sb = createClient(
   { auth: { persistSession: false, autoRefreshToken: false } },
 );
 const TD_KEY = Deno.env.get("TWELVEDATA_API_KEY") ?? "";
-const CACHE_ORE = Number(Deno.env.get("CACHE_ORE") ?? "6");
-const STORICO_GIORNI = Number(Deno.env.get("STORICO_GIORNI") ?? "1300");
+const CACHE_ORE = Number(Deno.env.get("CACHE_ORE") ?? "20");
+const STORICO_GIORNI = Number(Deno.env.get("STORICO_GIORNI") ?? "5000");
 
 const { datiTitolo } = creaDati(sb, { tdKey: TD_KEY, cacheOre: CACHE_ORE, storicoGiorni: STORICO_GIORNI });
 

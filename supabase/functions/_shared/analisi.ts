@@ -438,7 +438,9 @@ export function controllaDati(rec: Barra[], oggi: Date = new Date()): QualitaDat
   if (eta > 10) { avvisi.push("Ultimo prezzo di " + eta + " giorni fa: dati molto vecchi"); gravi = true; }
   else if (eta > 5) avvisi.push("Ultimo prezzo di " + eta + " giorni fa");
   let buchi = 0, salti = 0, incoerenti = 0, disordine = false;
-  for (let k = 0; k < rec.length - 1; k++) {
+  // Controllo sugli ultimi ~5 anni (1300 barre): anomalie remote in uno storico lungo non devono bloccare l'analisi
+  const ultimiK = Math.min(rec.length - 1, 1300);
+  for (let k = 0; k < ultimiK; k++) {
     const a = new Date(rec[k].d + "T00:00:00Z").getTime(), b = new Date(rec[k + 1].d + "T00:00:00Z").getTime();
     if (!(a > b)) disordine = true;
     if ((a - b) / 86400000 > 10) buchi++;

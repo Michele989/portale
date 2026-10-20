@@ -17,7 +17,7 @@ import { inviaEmail } from "../_shared/email.ts";
 const env = (k: string, d = "") => Deno.env.get(k) ?? d;
 const sb = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
 const { datiTitolo } = creaDati(sb, {
-  tdKey: env("TWELVEDATA_API_KEY"), cacheOre: Number(env("CACHE_ORE", "6")), storicoGiorni: Number(env("STORICO_GIORNI", "1300")),
+  tdKey: env("TWELVEDATA_API_KEY"), cacheOre: Number(env("CACHE_ORE", "20")), storicoGiorni: Number(env("STORICO_GIORNI", "5000")),
 });
 
 function uguali(a: string, b: string): boolean {
