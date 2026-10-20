@@ -98,3 +98,6 @@ table.classifica tr[data-vai]{ cursor:pointer; }
 table.classifica tr[data-vai]:hover{ background:var(--panel2); }
 .orizzonte-btns{ display:flex; gap:8px; flex-wrap:wrap; }
 .orizzonte-btns button{ flex:1 1 140px; }
+.pacchetto{ display:flex; gap:6px; flex:1 1 100%; }
+.pacchetto button:first-child{ flex:1 1 auto; text-align:left; }
+.pacchetto .togli{ flex:0 0 auto; color:var(--sell); border-color:var(--sell); }

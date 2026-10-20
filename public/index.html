@@ -460,14 +460,17 @@
 
   function renderPacchetti() {
     var P = window.MA_PACCHETTI || {};
+    var inLista = function (t) { return S.wl.some(function (w) { return w.ticker === t; }); };
     $("pacchetti").innerHTML = Object.keys(P).map(function (k) {
-      var mancanti = P[k].voci.filter(function (v) { return !S.wl.some(function (w) { return w.ticker === v[0]; }); }).length;
-      return '<button type="button" class="sec" data-pk="' + esc(k) + '"' + (mancanti ? "" : " disabled") + ">" + esc(P[k].nome) + " (+" + mancanti + ")</button>";
-    }).join("");
+      var mancanti = P[k].voci.filter(function (v) { return !inLista(v[0]); }).length;
+      var presenti = P[k].voci.length - mancanti;
+      return '<div class="pacchetto"><button type="button" class="sec" data-pk="' + esc(k) + '"' + (mancanti ? "" : " disabled") + ">+ " + esc(P[k].nome) + " (+" + mancanti + ")</button>" +
+        '<button type="button" class="sec togli" data-tk="' + esc(k) + '"' + (presenti ? "" : " disabled") + ' title="Toglie dalla lista i titoli di questo pacchetto">Togli (' + presenti + ")</button></div>";
+    }).join("") + '<div class="pacchetto"><button type="button" class="sec togli" id="btnSvuota"' + (S.wl.length ? "" : " disabled") + ">Svuota tutta la lista (" + S.wl.length + ")</button></div>";
     $("pacchetti").querySelectorAll("[data-pk]").forEach(function (b) {
       b.onclick = async function () {
         var pk = P[b.getAttribute("data-pk")];
-        var nuovi = pk.voci.filter(function (v) { return !S.wl.some(function (w) { return w.ticker === v[0]; }); });
+        var nuovi = pk.voci.filter(function (v) { return !inLista(v[0]); });
         var posto = 500 - S.wl.length;
         if (nuovi.length > posto) { $("msgLista").textContent = "Limite di 500 titoli: puoi aggiungerne ancora " + posto + "."; $("msgLista").className = "err"; return; }
         var righe = nuovi.map(function (v) { return { user_id: S.utente.id, ticker: v[0], tipo: v[1] }; });
@@ -477,6 +480,23 @@
         await caricaLista(); renderTutto();
       };
     });
+    async function togli(tickers, descrizione) {
+      if (!tickers.length) return;
+      if (!window.confirm("Togliere dalla lista " + tickers.length + " titoli (" + descrizione + ")? Le posizioni del portafoglio non vengono toccate.")) return;
+      var r = await MA.sb.from("watchlist").delete().eq("user_id", S.utente.id).in("ticker", tickers);
+      $("msgLista").textContent = r.error ? "Non è stato possibile togliere i titoli." : "Tolti " + tickers.length + " titoli dalla lista.";
+      $("msgLista").className = r.error ? "err" : "ok";
+      if (!r.error) tickers.forEach(function (t) { delete S.ris[t]; delete S.err[t]; });
+      await caricaLista(); renderTutto();
+    }
+    $("pacchetti").querySelectorAll("[data-tk]").forEach(function (b) {
+      b.onclick = function () {
+        var pk = P[b.getAttribute("data-tk")];
+        togli(pk.voci.map(function (v) { return v[0]; }).filter(inLista), pk.nome);
+      };
+    });
+    var sv = $("btnSvuota");
+    if (sv) sv.onclick = function () { togli(S.wl.map(function (w) { return w.ticker; }), "tutta la lista"); };
   }
 
   // ------------------------------------------------------------ ANALISI
