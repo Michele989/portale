@@ -33,7 +33,7 @@ window.MA_CATALOGO = [
   ["VNQ", "Vanguard Real Estate (immobiliare)", "etf"], ["XLRE", "Real Estate Select Sector SPDR", "etf"], ["VNQI", "Vanguard Global ex-US Real Estate", "etf"],
   // ---- ETF settoriali SPDR
   ["XLK", "Technology Select Sector SPDR (tecnologia)", "etf"], ["XLF", "Financial Select Sector SPDR", "etf"], ["XLE", "Energy Select Sector SPDR (energia)", "etf"],
-  ["XLV", "Health Care Select Sector SPDR (sanita'", "etf"], ["XLI", "Industrial Select Sector SPDR", "etf"], ["XLY", "Consumer Discretionary Select Sector SPDR", "etf"],
+  ["XLV", "Health Care Select Sector SPDR (sanità)", "etf"], ["XLI", "Industrial Select Sector SPDR", "etf"], ["XLY", "Consumer Discretionary Select Sector SPDR", "etf"],
   ["XLP", "Consumer Staples Select Sector SPDR", "etf"], ["XLU", "Utilities Select Sector SPDR", "etf"], ["XLB", "Materials Select Sector SPDR", "etf"],
   ["XLC", "Communication Services Select Sector SPDR", "etf"], ["VGT", "Vanguard Information Technology", "etf"], ["VHT", "Vanguard Health Care", "etf"],
   // ---- ETF tematici / crescita
