@@ -65,6 +65,12 @@
     <div class="scroll"><table id="tabella"></table></div>
     <div id="msgTab" class="muted"></div>
   </section>
+  <section class="card">
+    <h2>Affidabilità reale dei verdetti</h2>
+    <p class="muted">Si compila da sola: ogni notte il sistema salva il verdetto di ogni titolo e, passato l'orizzonte (1, 3, 12 mesi), registra cosa è successo davvero. «Azzeccati» = favorevole seguito da rialzo, sfavorevole seguito da ribasso o pareggio. Il confronto giusto è con «Caso» (quanti periodi sono saliti in totale): un verdetto utile deve stare chiaramente sopra. Non citare queste percentuali ai clienti sotto i 100 casi chiusi.</p>
+    <div class="scroll"><table id="tabVerdetti"></table></div>
+    <div id="msgVerdetti" class="muted"></div>
+  </section>
 </div>
 </div>
 
@@ -90,6 +96,7 @@
     $("pannello").classList.remove("hidden");
     $("msgAccesso").classList.add("hidden");
     presets();
+    caricaVerdetti();
     applica(r);
   }
 
@@ -170,6 +177,27 @@
     if (!righe.length) h += '<tr><td colspan="8" class="muted">Nessun utente.</td></tr>';
     $("tabella").innerHTML = h + "</tbody>";
     document.querySelectorAll("[data-az]").forEach(function (b) { b.onclick = function () { azione(b); }; });
+  }
+
+
+  async function caricaVerdetti() {
+    var r = await MA.chiama("admin", { azione: "verdetti" });
+    if (!r || !r.ok) { $("msgVerdetti").textContent = (r && r.errore) || "Registro non disponibile."; return; }
+    var p = function (x) { return x === null || x === undefined ? "—" : x.toFixed(0) + "%"; };
+    var cella = function (c) {
+      if (!c.n) return "—";
+      var t = p(c.pct) + " su " + c.n;
+      if (c.n < 100) t += ' <span class="muted">(pochi casi)</span>';
+      else if (c.ic) t += ' <span class="muted">(' + c.ic[0].toFixed(0) + "–" + c.ic[1].toFixed(0) + "%)</span>";
+      return t;
+    };
+    var h = "<tr><th>Orizzonte</th><th>Casi chiusi</th><th>Ancora aperti</th><th>Caso (periodi saliti)</th><th>Favorevole azzeccati</th><th>Sfavorevole azzeccati</th></tr>";
+    (r.orizzonti || []).forEach(function (o) {
+      var nome = { breve: "Breve (1 mese)", medio: "Medio (3 mesi)", lungo: "Lungo (12 mesi)" }[o.orizzonte] || o.orizzonte;
+      h += "<tr><td>" + nome + "</td><td>" + o.chiusi + "</td><td>" + o.aperti + "</td><td>" + p(o.base_positivi) + "</td><td>" + cella(o.favorevole) + "</td><td>" + cella(o.sfavorevole) + "</td></tr>";
+    });
+    $("tabVerdetti").innerHTML = h;
+    $("msgVerdetti").textContent = r.dal ? "Registro attivo dal " + r.dal + "." : "Nessun verdetto registrato ancora: parte dalla prima notte di precaricamento.";
   }
 
   async function ricarica() {

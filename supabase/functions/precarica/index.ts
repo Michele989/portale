@@ -8,6 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { risposta } from "../_shared/http.ts";
 import { creaDati, ErroreServizio } from "../_shared/dati.ts";
 import { eseguiPrecarica } from "../_shared/precarica.ts";
+import { elaboraVerdetti } from "../_shared/registro_verdetti.ts";
 
 const env = (k: string, d = "") => Deno.env.get(k) ?? d;
 const sb = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
@@ -38,6 +39,13 @@ Deno.serve(async (req: Request) => {
         const r = await datiTitolo(t); // cacheOre = 0: scarica sempre
         // se il servizio e' al limite, datiTitolo ripiega sulla copia vecchia: qui lo trattiamo come stop
         if (!r.scaricato) throw new ErroreServizio(429, "LIMITE_MINUTO", "Limite del servizio dati");
+        return r.barre;
+      },
+      dopo: async (t, barre) => {
+        const { data: aperti } = await sb.from("verdetti_orizzonte").select("id, orizzonte, data_verdetto").eq("ticker", t).is("data_esito", null);
+        const { nuovi, chiusure } = elaboraVerdetti(t, barre as any, (aperti || []) as any);
+        if (nuovi.length) await sb.from("verdetti_orizzonte").upsert(nuovi, { onConflict: "ticker,orizzonte,data_verdetto", ignoreDuplicates: true });
+        for (const c of chiusure) await sb.from("verdetti_orizzonte").update({ data_esito: c.data_esito, rendimento: c.rendimento }).eq("id", c.id);
       },
       segnaErrore,
       attendi: (ms) => new Promise((r) => setTimeout(r, ms)),

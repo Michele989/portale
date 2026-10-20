@@ -5,7 +5,8 @@ import { ErroreServizio } from "./dati.ts";
 
 export interface DepsPrecarica {
   daAggiornare: (limite: number) => Promise<string[]>;
-  scarica: (ticker: string) => Promise<void>; // lancia ErroreServizio se non riesce
+  scarica: (ticker: string) => Promise<unknown>; // lancia ErroreServizio se non riesce; restituisce le barre
+  dopo?: (ticker: string, barre: unknown) => Promise<void>; // registro verdetti: errori ignorati
   segnaErrore: (ticker: string) => Promise<void>;
   attendi: (ms: number) => Promise<void>;
   adesso: () => number;
@@ -25,8 +26,9 @@ export async function eseguiPrecarica(
     if (d.adesso() - inizio > opz.durataMaxMs) { r.stop = "tempo"; break; }
     if (i > 0) await d.attendi(opz.pausaMs); // 8 richieste al minuto sul piano gratuito
     try {
-      await d.scarica(lista[i]);
+      const barre = await d.scarica(lista[i]);
       r.scaricati++;
+      if (d.dopo) { try { await d.dopo(lista[i], barre); } catch (_e) { /* il registro non blocca il precaricamento */ } }
     } catch (e) {
       if (e instanceof ErroreServizio) {
         if (e.codice === "LIMITE_GIORNALIERO") { r.stop = "limite_giornaliero"; break; }

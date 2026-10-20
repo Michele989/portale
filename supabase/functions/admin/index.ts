@@ -6,6 +6,7 @@
 // =========================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { opzioniCors, risposta, tokenDa } from "../_shared/http.ts";
+import { riepilogoVerdetti } from "../_shared/registro_verdetti.ts";
 
 const sb = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -92,6 +93,12 @@ Deno.serve(async (req: Request) => {
           avvisi_7gg: avvInviati.count || 0,
         };
         return risposta({ ok: true, utenti, stats });
+      }
+
+      case "verdetti": {
+        const { data, error } = await sb.rpc("verdetti_conteggi");
+        if (error || !data) return risposta({ ok: false, errore: "Registro non disponibile: esegui di nuovo schema.sql in Supabase." }, 500);
+        return risposta({ ok: true, dal: data.dal, orizzonti: riepilogoVerdetti(data.righe || [], data.aperti || {}) });
       }
 
       case "crea_chiave": {

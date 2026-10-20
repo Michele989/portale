@@ -178,7 +178,7 @@ revoke all on function public.rimborsa_uso(uuid) from public, anon, authenticate
 grant execute on function public.consuma_uso(uuid) to service_role;
 grant execute on function public.rimborsa_uso(uuid) to service_role;
 
--- 6e) Elenco dei titoli da precaricare di notte (seguiti da almeno un cliente e non aggiornati)
+-- 6e) Elenco dei titoli da precaricare di notte (seguiti da almeno un cliente e scaricati prima dell'ultima chiusura, 21:10 UTC)
 create or replace function public.titoli_da_precaricare(p_limite integer default 12)
 returns table (ticker text)
 language sql
@@ -192,12 +192,50 @@ as $$
     left join public.price_cache c on c.ticker = t.ticker
    where c.ticker is null
       or coalesce((c.dati->>'v')::integer, 1) < 2
-      or c.aggiornato_il < now() - interval '18 hours'
+      or c.aggiornato_il < ((date_trunc('day', (now() at time zone 'utc') - interval '21 hours 10 minutes')
+                             + interval '21 hours 10 minutes') at time zone 'utc')
    order by c.aggiornato_il asc nulls first, t.ticker
    limit greatest(1, least(coalesce(p_limite, 12), 50));
 $$;
 revoke all on function public.titoli_da_precaricare(integer) from public, anon, authenticated;
 grant execute on function public.titoli_da_precaricare(integer) to service_role;
+
+-- 6f) Registro automatico dei verdetti per orizzonte (misura l'affidabilita' reale nel tempo)
+create table if not exists public.verdetti_orizzonte (
+  id bigint generated always as identity primary key,
+  ticker text not null check (ticker ~ '^[A-Z0-9.-]{1,12}$'),
+  orizzonte text not null check (orizzonte in ('breve', 'medio', 'lungo')),
+  data_verdetto date not null,
+  prezzo numeric not null,
+  verdetto text not null check (verdetto in ('favorevole', 'neutro', 'sfavorevole')),
+  punteggio integer,
+  data_esito date,
+  rendimento numeric,            -- % tra il giorno del verdetto e la fine dell'orizzonte (prezzi corretti)
+  creato_il timestamptz not null default now(),
+  unique (ticker, orizzonte, data_verdetto)
+);
+create index if not exists verdetti_aperti_idx on public.verdetti_orizzonte (ticker) where data_esito is null;
+alter table public.verdetti_orizzonte enable row level security;  -- nessuna policy: solo server
+
+create or replace function public.verdetti_conteggi()
+returns jsonb
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'righe', coalesce((select jsonb_agg(jsonb_build_object(
+        'orizzonte', orizzonte, 'verdetto', verdetto, 'n', n, 'positivi', pos, 'rend_medio', rm))
+      from (select orizzonte, verdetto, count(*) n, count(*) filter (where rendimento > 0) pos, avg(rendimento) rm
+              from public.verdetti_orizzonte where data_esito is not null group by 1, 2) x), '[]'::jsonb),
+    'aperti', coalesce((select jsonb_object_agg(orizzonte, n)
+      from (select orizzonte, count(*) n from public.verdetti_orizzonte where data_esito is null group by 1) y), '{}'::jsonb),
+    'dal', (select min(data_verdetto) from public.verdetti_orizzonte)
+  );
+$$;
+revoke all on function public.verdetti_conteggi() from public, anon, authenticated;
+grant execute on function public.verdetti_conteggi() to service_role;
 
 -- 7) SICUREZZA A LIVELLO DI RIGA (RLS): ognuno vede solo i propri dati.
 --    Le chiavi si creano e modificano SOLO dal pannello admin (server).
