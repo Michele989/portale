@@ -1,4 +1,4 @@
-# Portale Monitor Azioni & ETF — installazione (≈ 30 minuti)
+# Tickly — installazione (≈ 30 minuti)
 
 Accesso con **chiavi a usi** assegnate dall'amministratore (nessun pagamento online).
 Architettura: sito statico (Netlify) + Supabase (login, database, funzioni server) + Twelve Data (prezzi).

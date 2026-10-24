@@ -1,5 +1,5 @@
 -- =========================================================================
--- SCHEMA DATABASE - Portale Monitor Azioni & ETF (accesso con chiavi a usi)
+-- SCHEMA DATABASE - Tickly (accesso con chiavi a usi)
 -- =========================================================================
 -- Da eseguire nel SQL Editor di Supabase (New query -> incolla -> Run).
 -- E' idempotente: puoi rieseguirlo senza danni.

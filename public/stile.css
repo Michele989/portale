@@ -101,3 +101,8 @@ table.classifica tr[data-vai]:hover{ background:var(--panel2); }
 .pacchetto{ display:flex; gap:6px; flex:1 1 100%; }
 .pacchetto button:first-child{ flex:1 1 auto; text-align:left; }
 .pacchetto .togli{ flex:0 0 auto; color:var(--sell); border-color:var(--sell); }
+
+/* marchio */
+.marca{ display:flex; align-items:center; gap:10px; }
+.marca h1{ text-transform:none; font-weight:800; font-size:24px; letter-spacing:2px; color:var(--text); line-height:1; }
+.marca .ly{ color:var(--buy); }

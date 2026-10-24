@@ -18,7 +18,7 @@
 <div class="wrap">
 
 <header class="top">
-  <h1 id="titolo">Tickly</h1>
+  <div class="marca"><img src="logo-animato.svg" width="48" height="48" alt="Logo Tickly"><h1 id="titolo">Tickly</h1></div>
   <div id="utenteInfo" class="muted"></div>
 </header>
 
@@ -233,7 +233,7 @@
 
   // ------------------------------------------------------------ AVVIO
   async function avvia() {
-    $("titolo").textContent = MA.C.NOME_SERVIZIO;
+    if (/^tickly$/i.test(String(MA.C.NOME_SERVIZIO))) $("titolo").innerHTML = 'tick<span class="ly">ly</span>'; else $("titolo").textContent = MA.C.NOME_SERVIZIO;
     document.title = MA.C.NOME_SERVIZIO;
     document.querySelectorAll("[data-cfg]").forEach(function (e) { e.textContent = MA.C[e.getAttribute("data-cfg")] || ""; });
     if (!MA.configurato()) { show("avvisoConfig", true); show("vistaAuth", false); return; }
