@@ -112,6 +112,7 @@
       <h3>Crescita</h3><div id="chips-crescita"></div>
       <div class="row" style="margin-top:14px">
         <button type="button" id="btnAnalizzaTutto">Analizza tutta la lista</button>
+        <button type="button" id="btnFerma" class="sec togli hidden">Ferma l'analisi</button>
         <button type="button" id="btnCsv" class="sec">Esporta CSV</button>
       </div>
       <div class="muted" style="margin-top:8px">Ogni titolo analizzato consuma <b>1 uso</b>. Prima di partire ti viene mostrato quanti ne userai.</div>
@@ -328,6 +329,8 @@
     var attiva = statoChiave() === "ok";
     $("btnAnalizzaTutto").disabled = !attiva || S.inCorso;
     $("btnAggiornaPf").disabled = !attiva || S.inCorso;
+    $("btnFerma").classList.toggle("hidden", !S.inCorso);
+    $("btnFerma").disabled = !S.inCorso || !!S.stop;
   }
 
   // ------------------------------------------------------------ IMPOSTAZIONI
@@ -587,11 +590,18 @@
       if (r.codice === "LIMITE_MINUTO" && tentativi < 3) {
         tentativi++;
         $("progresso").innerHTML = '<span class="spinner"></span>Limite del servizio dati: attendo ' + (r.riprova_tra || 20) + ' secondi…';
-        await MA.attendi(((r.riprova_tra || 20) * 1000));
+        await attendiInterrompibile((r.riprova_tra || 20) * 1000);
+        if (S.stop) return { ok: false, codice: "FERMATA", errore: "Analisi fermata." };
         continue;
       }
       return r;
     }
+  }
+
+  // Attesa che si interrompe subito se premi «Ferma l'analisi»
+  async function attendiInterrompibile(ms) {
+    var fine = Date.now() + ms;
+    while (Date.now() < fine && !S.stop) await MA.attendi(Math.min(300, Math.max(0, fine - Date.now())));
   }
 
   var FERMANTI = ["NESSUNA_CHIAVE", "DISATTIVATA", "SCADUTA", "USI_ESAURITI", "NON_AUTENTICATO", "NON_AUTENTICATO", "LIMITE_GIORNALIERO", "CONFIG"];
@@ -605,9 +615,10 @@
       return;
     }
     if (!window.confirm("Verranno usati " + tickers.length + " usi (te ne restano " + S.chiave.usi_rimasti + "). Procedere?")) return;
-    S.inCorso = true; renderStato();
-    var fatti = 0;
+    S.inCorso = true; S.stop = false; renderStato();
+    var fatti = 0, fermata = false;
     for (var i = 0; i < tickers.length; i++) {
+      if (S.stop) { fermata = true; break; }
       var t = tickers[i];
       $("progresso").innerHTML = '<span class="spinner"></span>Analisi ' + (i + 1) + "/" + tickers.length + ": " + esc(t);
       var r = await analizzaUno(t);
@@ -618,8 +629,10 @@
         var fresco = r.dati_del && (Date.now() - new Date(r.dati_del).getTime()) < 60000;
         if (fresco && i < tickers.length - 1 && MA.C.PAUSA_MS > 0) {
           $("progresso").innerHTML = '<span class="spinner"></span>Analisi ' + (i + 1) + "/" + tickers.length + ": " + esc(t) + " — pausa per il limite del servizio dati";
-          await MA.attendi(MA.C.PAUSA_MS);
+          await attendiInterrompibile(MA.C.PAUSA_MS);
         }
+      } else if (r.codice === "FERMATA") {
+        fermata = true; break;
       } else {
         S.err[t] = r.errore || "Errore";
         if (typeof r.usi_rimasti === "number" && S.chiave) S.chiave.usi_rimasti = r.usi_rimasti;
@@ -627,14 +640,20 @@
       }
       renderStato(); renderRisultati();
     }
-    S.inCorso = false;
+    if (S.stop) fermata = true;
+    S.inCorso = false; S.stop = false;
     salvaCache();
     await caricaChiave();
-    $("progresso").textContent = "Completato: " + fatti + " analisi su " + tickers.length + ". " + (S.ultimaData ? "Aggiornato il " + MA.data(S.ultimaData, true) : "");
+    $("progresso").textContent = (fermata ? "Analisi fermata da te: " + fatti + " fatte su " + tickers.length + " (gli usi non consumati restano a te; i risultati ottenuti sono salvati). " : "Completato: " + fatti + " analisi su " + tickers.length + ". ") + (S.ultimaData ? "Aggiornato il " + MA.data(S.ultimaData, true) : "");
     renderTutto();
     controllaAllarmi(true);
   }
 
+  $("btnFerma").onclick = function () {
+    if (!S.inCorso) return;
+    S.stop = true; $("btnFerma").disabled = true;
+    $("progresso").innerHTML = '<span class="spinner"></span>Sto fermando l\'analisi: finisco il titolo in corso…';
+  };
   $("btnAnalizzaTutto").onclick = function () { analizzaLista(S.wl.map(function (x) { return x.ticker; })); };
   $("btnAggiornaPf").onclick = function () { analizzaLista(S.pf.map(function (x) { return x.ticker; })); };
 
