@@ -9,7 +9,7 @@ window.CONFIG = {
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3cmpyaXdqZnp6dnJlaXV3bG5pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NTk2ODEsImV4cCI6MjEwNjUzNTY4MX0.EWcNZRIlIUh6UXoWZ-vWfU-v2yqo73pwe9vwNJRDI54",
 
   // Dati mostrati nel sito e nelle pagine legali
-  NOME_SERVIZIO: "Monitor Azioni & ETF",
+  NOME_SERVIZIO: "Tickly",
   TITOLARE: "Michele De Rosa",
   EMAIL_CONTATTO: "michele1198@live.it",
   CONTATTO_ADMIN: "Email michele1198@live.it",

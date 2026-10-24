@@ -8,6 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { risposta } from "../_shared/http.ts";
 import { creaDati, ErroreServizio } from "../_shared/dati.ts";
 import { eseguiPrecarica } from "../_shared/precarica.ts";
+import { CATALOGO_TICKER } from "../_shared/catalogo_tickers.ts";
 import { elaboraVerdetti } from "../_shared/registro_verdetti.ts";
 
 const env = (k: string, d = "") => Deno.env.get(k) ?? d;
@@ -31,7 +32,7 @@ Deno.serve(async (req: Request) => {
   try {
     const riepilogo = await eseguiPrecarica({
       daAggiornare: async (limite) => {
-        const { data, error } = await sb.rpc("titoli_da_precaricare", { p_limite: limite });
+        const { data, error } = await sb.rpc("titoli_da_precaricare", { p_limite: limite, p_extra: CATALOGO_TICKER });
         if (error) throw new Error("rpc");
         return (data || []).map((x: any) => String(x.ticker));
       },

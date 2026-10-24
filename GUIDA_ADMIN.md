@@ -31,7 +31,7 @@ Perché così: una lista tipica di 11 titoli consuma 11 usi, quindi Base (150) �
 
 ## 4. Costi e pareggio (verifica i prezzi attuali sui siti ufficiali)
 - Supabase e Netlify: gratuiti all'inizio.
-- Twelve Data: gratis 8 richieste/min e 800/giorno. Basta per pochi clienti grazie alla cache di 6 ore condivisa tra tutti. Se compaiono spesso errori «limite» passa al piano a pagamento (indicativamente ≈ 27 €/mese per il piano «Grow», da verificare) e metti `PAUSA_MS: 0`.
+- Twelve Data: gratis 8 richieste/min e 800/giorno. Basta per pochi clienti grazie alla cache di 20 ore condivisa tra tutti e al precaricamento notturno (`INSTALLA_PRECARICA.bat`). Se compaiono spesso errori «limite» passa al piano a pagamento (piano «Grow»: circa 79 $/mese ≈ 70 €, da verificare sul sito se mensile o annuale) e metti `PAUSA_MS: 0`. Pareggio indicativo: circa 12 clienti «Base» o 6 «Plus».
 - Pareggio indicativo con il piano a pagamento: ≈ **5 clienti Base o 3 Plus** al mese. Sopra questa soglia ogni cliente in più è margine, al lordo di tasse e commissioni di incasso.
 - Dominio personalizzato (facoltativo): ≈ 10–15 €/anno.
 

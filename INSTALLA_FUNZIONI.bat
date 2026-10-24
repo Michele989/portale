@@ -35,6 +35,8 @@ call :deploy analizza ""
 if errorlevel 1 goto errore
 call :deploy admin ""
 if errorlevel 1 goto errore
+echo Aggiorno anche il precaricamento notturno (se lo hai installato)...
+call :deploy precarica "--no-verify-jwt"
 echo.
 echo ============================================================
 echo  FATTO. Le funzioni "analizza" e "admin" sono online.

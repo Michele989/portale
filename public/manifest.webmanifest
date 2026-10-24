@@ -1,6 +1,6 @@
 {
-  "name": "Monitor Azioni & ETF",
-  "short_name": "Monitor",
+  "name": "Tickly",
+  "short_name": "Tickly",
   "description": "Segnali tecnici su azioni ed ETF con margine di errore dichiarato",
   "start_url": "index.html",
   "scope": ".",

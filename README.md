@@ -32,7 +32,7 @@ supabase secrets set TWELVEDATA_API_KEY=<la tua chiave Twelve Data>
 supabase functions deploy analizza
 supabase functions deploy admin
 ```
-Opzionali: `supabase secrets set CACHE_ORE=6 STORICO_GIORNI=1300`.
+Opzionali: `supabase secrets set CACHE_ORE=20 STORICO_GIORNI=5000`.
 `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` sono già disponibili alle funzioni: **non vanno impostati né copiati da nessuna parte**.
 
 ## 4. Il tuo account amministratore
@@ -65,7 +65,7 @@ Compila i dati del titolare, **fai rivedere termini e privacy** da un profession
 
 ## Note tecniche e limiti
 - 1 uso = 1 titolo analizzato; se il servizio dati fallisce, l'uso viene rimborsato in automatico.
-- I prezzi sono in cache condivisa per 6 ore: più clienti sullo stesso titolo = una sola richiesta a Twelve Data.
+- I prezzi sono in cache condivisa per 20 ore: più clienti sullo stesso titolo = una sola richiesta a Twelve Data.
 - Piano gratuito Twelve Data: 8 richieste/min, 800/giorno. Con molti clienti passa a un piano a pagamento e metti `PAUSA_MS: 0` in `config.js`.
 - `STORICO_GIORNI=1300` (≈5 anni) è stato scelto per i backtest: alla **prima analisi reale** verifica che Twelve Data lo accetti; in caso contrario riduci il valore (es. 1000).
 - Le notifiche di vendita funzionano solo con la pagina aperta nel browser.
@@ -120,3 +120,19 @@ Limiti: con il piano dati gratuito (8 richieste/min) ogni passata scarica al mas
 ## Orizzonte di investimento (breve / medio / lungo)
 
 Ogni analisi calcola anche tre studi (21, 63, 252 giorni di borsa) in `supabase/functions/_shared/orizzonti.ts`: 4 criteri a regole, studio storico (casi simili a oggi, periodi indipendenti), ventaglio simulato (bootstrap a blocchi senza tendenza) e verdetto favorevole/neutro/sfavorevole/non valutabile. Il front-end (`index.html`) mostra la classifica e lo studio per l'orizzonte scelto dall'utente (salvato nel browser). Test: `tests/test_orizzonti.mjs`. Nota onesta: sui dati casuali i verdetti non hanno alcun potere predittivo, come è giusto che sia; su dati reali la tenuta va verificata nel tempo (idea futura: registrare i verdetti nel registro dei segnali).
+
+## Precaricamento notturno, cache 20 ore, storico lungo
+- I prezzi dei titoli seguiti dai clienti (lista di controllo + portafoglio + SPY) vengono scaricati di notte dalla funzione `precarica` (pianificata da `supabase/cron_precarica.sql`, installata con `INSTALLA_PRECARICA.bat`). Di giorno le analisi leggono la cache: immediate e senza consumare il limite del servizio dati.
+- Cache valida 20 ore (`CACHE_ORE`). Storico richiesto: fino a 5000 giorni (`STORICO_GIORNI`), con prezzi corretti per dividendi e frazionamenti (`adjust=all`). Se il piano dati rifiuta la richiesta, il sistema ripiega da solo su 1300 giorni e poi sul formato semplice.
+- La cache porta una versione (`v:2`); le copie vecchie vengono riscaricate automaticamente.
+- I controlli di qualità dati (salti, buchi) guardano solo gli ultimi ~5 anni, così uno storico lungo non genera falsi allarmi.
+
+## Registro automatico dei verdetti (affidabilità reale)
+Ogni notte `precarica` salva il verdetto (favorevole/neutro/sfavorevole) di ogni titolo scaricato, per i tre orizzonti, nella tabella `verdetti_orizzonte`. Dopo 21/63/252 sedute il sistema calcola il rendimento reale e chiude il caso. Il Pannello admin mostra % di verdetti azzeccati con intervallo di confidenza, contro la % di periodi saliti in assoluto («caso»). Nessun intervento manuale.
+
+## Catalogo completo nel precaricamento
+Il precaricamento notturno scarica anche tutti i 420 titoli del catalogo (`_shared/catalogo_tickers.ts`, allineato a `public/catalogo.js` da un test). I titoli seguiti dai clienti hanno la precedenza. Consumo: circa 420 richieste a notte sulle 800 del piano gratuito. Con più di ~400 titoli seguiti dai clienti oltre al catalogo, valuta il piano a pagamento.
+
+## Ricerca: cronologia e filtro nella classifica
+- Cliccando sul campo «Cerca per nome o ticker» (vuoto) compaiono le ultime 15 ricerche, con il tasto «Cancella cronologia» (salvate solo nel browser).
+- Sopra la classifica c'è una casella «Cerca» unica per favorevoli, neutri e sfavorevoli: filtra per ticker o nome e mostra tutti i risultati; «Azzera» ripristina.

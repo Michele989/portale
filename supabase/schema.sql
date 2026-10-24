@@ -179,26 +179,31 @@ grant execute on function public.consuma_uso(uuid) to service_role;
 grant execute on function public.rimborsa_uso(uuid) to service_role;
 
 -- 6e) Elenco dei titoli da precaricare di notte (seguiti da almeno un cliente e scaricati prima dell'ultima chiusura, 21:10 UTC)
-create or replace function public.titoli_da_precaricare(p_limite integer default 12)
+drop function if exists public.titoli_da_precaricare(integer);
+create or replace function public.titoli_da_precaricare(p_limite integer default 12, p_extra text[] default '{}')
 returns table (ticker text)
 language sql
 security definer
 set search_path = public
 as $$
   select t.ticker
-    from (select w.ticker from public.watchlist w
-          union select p.ticker from public.portfolio p
-          union select 'SPY'::text) t
+    from (select u.ticker, min(u.prio) prio
+            from (select w.ticker, 0 prio from public.watchlist w
+                  union all select p.ticker, 0 from public.portfolio p
+                  union all select 'SPY'::text, 0
+                  union all select upper(x), 1 from unnest(coalesce(p_extra, '{}')) x
+                             where upper(x) ~ '^[A-Z0-9.-]{1,12}$') u
+           group by u.ticker) t
     left join public.price_cache c on c.ticker = t.ticker
    where c.ticker is null
       or coalesce((c.dati->>'v')::integer, 1) < 2
       or c.aggiornato_il < ((date_trunc('day', (now() at time zone 'utc') - interval '21 hours 10 minutes')
                              + interval '21 hours 10 minutes') at time zone 'utc')
-   order by c.aggiornato_il asc nulls first, t.ticker
+   order by t.prio, c.aggiornato_il asc nulls first, t.ticker
    limit greatest(1, least(coalesce(p_limite, 12), 50));
 $$;
-revoke all on function public.titoli_da_precaricare(integer) from public, anon, authenticated;
-grant execute on function public.titoli_da_precaricare(integer) to service_role;
+revoke all on function public.titoli_da_precaricare(integer, text[]) from public, anon, authenticated;
+grant execute on function public.titoli_da_precaricare(integer, text[]) to service_role;
 
 -- 6f) Registro automatico dei verdetti per orizzonte (misura l'affidabilita' reale nel tempo)
 create table if not exists public.verdetti_orizzonte (

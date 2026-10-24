@@ -125,3 +125,10 @@ Ti avvisa via email se il sito si rompe. Vedi `README.md`, punto 10 (serve un ac
 | Il pannello admin non compare | Rifai la query `insert into public.admins…` con l'email esatta di registrazione. |
 | Le email non arrivano | Spam; mittente non verificato; limiti del piano gratuito; prova `INSTALLA_AVVISI.bat` di nuovo. |
 | Un file `.bat` si chiude subito | Aprilo da *Prompt dei comandi* (`cd C:\portale` poi il nome del file) per leggere l'errore. |
+
+## Extra: precaricamento notturno (consigliato)
+1. In Supabase → SQL Editor: incolla tutto `supabase\schema.sql` → Run.
+2. Doppio clic su `INSTALLA_FUNZIONI.bat` (aggiorna le funzioni).
+3. Doppio clic su `INSTALLA_PRECARICA.bat`.
+4. Supabase → Database → Extensions: attiva `pg_cron` e `pg_net`.
+5. SQL Editor: incolla `cron_precarica_pronto.sql` → Run. Poi cancella quel file.

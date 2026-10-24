@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Monitor Azioni & ETF</title>
+<title>Tickly</title>
 <link rel="stylesheet" href="stile.css">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0b0f0d">
@@ -18,7 +18,7 @@
 <div class="wrap">
 
 <header class="top">
-  <h1 id="titolo">Monitor Azioni & ETF</h1>
+  <h1 id="titolo">Tickly</h1>
   <div id="utenteInfo" class="muted"></div>
 </header>
 
@@ -387,7 +387,31 @@
       var r2 = await MA.sb.from("watchlist").select("ticker,tipo").eq("user_id", S.utente.id);
       S.wl = (r2.data || []).slice().sort(function (a, b) { return a.ticker < b.ticker ? -1 : 1; });
     }
+    await catalogoCompletoAdmin();
   }
+
+  // Account amministratore: una sola volta aggiunge in automatico tutto il catalogo alla lista (poi decidi tu con Togli/Svuota).
+  async function catalogoCompletoAdmin() {
+    if (!S.admin || !window.MA_CATALOGO) return;
+    var chiave = "ma_cat_completo_" + S.utente.id, fatto = false;
+    try { fatto = localStorage.getItem(chiave) === "1"; } catch (e) { /* ignora */ }
+    if (fatto) return;
+    var presenti = {}; S.wl.forEach(function (w) { presenti[w.ticker] = 1; });
+    var mancanti = window.MA_CATALOGO.filter(function (v) { return !presenti[v[0]]; });
+    var posto = 500 - S.wl.length;
+    if (mancanti.length > posto) mancanti = mancanti.slice(0, Math.max(0, posto));
+    if (mancanti.length) {
+      var righe = mancanti.map(function (v) { return { user_id: S.utente.id, ticker: v[0], tipo: v[2] }; });
+      var r = await MA.sb.from("watchlist").insert(righe);
+      if (r.error) return;
+      var r2 = await MA.sb.from("watchlist").select("ticker,tipo").eq("user_id", S.utente.id);
+      S.wl = (r2.data || []).slice().sort(function (a, b) { return a.ticker < b.ticker ? -1 : 1; });
+    }
+    try { localStorage.setItem(chiave, "1"); } catch (e) { /* ignora */ }
+  }
+
+  var NOME_TIPO = { azioni: "Azioni", etf: "ETF", crescita: "Crescita" };
+  function nomeCatalogo(t) { var c = (window.MA_CATALOGO || []).filter(function (x) { return x[0] === t; })[0]; return c ? c[1] : ""; }
 
   function tipoDi(t) { for (var i = 0; i < S.wl.length; i++) if (S.wl[i].ticker === t) return S.wl[i].tipo; return "azioni"; }
 
@@ -424,11 +448,14 @@
       else if (perNome.length > 1) { msg.textContent = "Più risultati: scegline uno dall'elenco qui sopra."; msg.className = "err"; mostraSuggerimenti(); return; }
     }
     if (!/^[A-Z0-9.\-]{1,12}$/.test(t)) { msg.textContent = "Ticker non valido (lettere/numeri, max 12)."; msg.className = "err"; return; }
-    if (S.wl.some(function (x) { return x.ticker === t; })) { msg.textContent = t + " è già nella lista."; msg.className = "err"; return; }
+    salvaCron(t, $("nuovoTipo").value);
+    var presente = S.wl.filter(function (x) { return x.ticker === t; })[0];
+    if (presente) { msg.textContent = t + " è già nella lista, tra: " + (NOME_TIPO[presente.tipo] || presente.tipo) + "."; msg.className = "err"; return; }
     if (S.wl.length >= 500) { msg.textContent = "Limite di 500 titoli raggiunto."; msg.className = "err"; return; }
     var r = await MA.sb.from("watchlist").insert({ user_id: S.utente.id, ticker: t, tipo: $("nuovoTipo").value });
     if (r.error) { msg.textContent = "Non è stato possibile aggiungere " + t + "."; msg.className = "err"; return; }
-    $("nuovoTicker").value = ""; msg.textContent = t + " aggiunto."; msg.className = "ok";
+    var tipoScelto = $("nuovoTipo").value, nomeT = nomeCatalogo(t);
+    $("nuovoTicker").value = ""; msg.textContent = t + (nomeT ? " (" + nomeT + ")" : "") + " aggiunto nella sezione «" + (NOME_TIPO[tipoScelto] || tipoScelto) + "» della lista."; msg.className = "ok";
     await caricaLista(); renderTutto();
   };
 
@@ -452,11 +479,46 @@
     el.querySelectorAll("[data-t]").forEach(function (b) {
       b.onclick = function () {
         $("nuovoTicker").value = b.getAttribute("data-t"); $("nuovoTipo").value = b.getAttribute("data-tipo");
+        salvaCron(b.getAttribute("data-t"), b.getAttribute("data-tipo"));
         el.classList.add("hidden"); $("formTicker").requestSubmit ? $("formTicker").requestSubmit() : $("formTicker").dispatchEvent(new Event("submit", { cancelable: true }));
       };
     });
   }
-  $("nuovoTicker").oninput = mostraSuggerimenti;
+  // Cronologia delle ricerche (solo su questo browser)
+  var CRON_KEY = "ma_cronologia";
+  function leggiCron() {
+    try { var a = JSON.parse(localStorage.getItem(CRON_KEY) || "[]"); return Array.isArray(a) ? a.filter(function (x) { return x && typeof x.t === "string"; }) : []; } catch (e) { return []; }
+  }
+  function salvaCron(t, tipo) {
+    if (!t) return;
+    var cat = (window.MA_CATALOGO || []).filter(function (x) { return x[0] === t; })[0];
+    var a = leggiCron().filter(function (x) { return x.t !== t; });
+    a.unshift({ t: t, n: cat ? cat[1] : "", tipo: cat ? cat[2] : (tipo || "azioni") });
+    try { localStorage.setItem(CRON_KEY, JSON.stringify(a.slice(0, 15))); } catch (e) { /* ignora */ }
+  }
+  function mostraCronologia() {
+    var el = $("suggerimenti"), a = leggiCron();
+    if (!a.length) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+    el.classList.remove("hidden");
+    el.innerHTML = '<div class="muted" style="margin:2px 0">Ricerche recenti <button type="button" class="piccolo sec" id="btnPulisciCron">Cancella cronologia</button></div>' +
+      a.map(function (x) {
+        var gia = S.wl.some(function (w) { return w.ticker === x.t; });
+        return '<button type="button" class="sec sugg-voce" data-cron="' + esc(x.t) + '" data-tipo="' + esc(x.tipo) + '"><b>' + esc(x.t) + "</b> " + esc(x.n) + (gia ? ' <span class="muted">(già in lista)</span>' : "") + "</button>";
+      }).join("");
+    el.querySelectorAll("[data-cron]").forEach(function (b) {
+      b.onclick = function () {
+        $("nuovoTicker").value = b.getAttribute("data-cron"); $("nuovoTipo").value = b.getAttribute("data-tipo");
+        mostraSuggerimenti();
+      };
+    });
+    $("btnPulisciCron").onclick = function () { try { localStorage.removeItem(CRON_KEY); } catch (e) { /* ignora */ } el.classList.add("hidden"); el.innerHTML = ""; };
+  }
+  function suggerimentiOCronologia() {
+    if (String($("nuovoTicker").value || "").trim().length < 2) mostraCronologia(); else mostraSuggerimenti();
+  }
+  $("nuovoTicker").oninput = suggerimentiOCronologia;
+  $("nuovoTicker").onfocus = suggerimentiOCronologia;
+  $("nuovoTicker").onclick = suggerimentiOCronologia;
 
   function renderPacchetti() {
     var P = window.MA_PACCHETTI || {};
@@ -475,7 +537,11 @@
         if (nuovi.length > posto) { $("msgLista").textContent = "Limite di 500 titoli: puoi aggiungerne ancora " + posto + "."; $("msgLista").className = "err"; return; }
         var righe = nuovi.map(function (v) { return { user_id: S.utente.id, ticker: v[0], tipo: v[1] }; });
         var r = await MA.sb.from("watchlist").insert(righe);
-        $("msgLista").textContent = r.error ? "Non è stato possibile aggiungere il pacchetto." : "Aggiunti " + nuovi.length + " titoli.";
+        var perTipo = {}; nuovi.forEach(function (v) { perTipo[v[1]] = (perTipo[v[1]] || 0) + 1; });
+        var dove = Object.keys(perTipo).map(function (k) { return perTipo[k] + " in " + (NOME_TIPO[k] || k); }).join(", ");
+        var giaPresenti = pk.voci.length - nuovi.length;
+        $("msgLista").textContent = r.error ? "Non è stato possibile aggiungere il pacchetto «" + pk.nome + "»." :
+          "Pacchetto «" + pk.nome + "» aggiunto: " + nuovi.length + (nuovi.length === 1 ? " titolo (" : " titoli (") + dove + ")" + (giaPresenti ? "; " + giaPresenti + " erano già in lista" : "") + ".";
         $("msgLista").className = r.error ? "err" : "ok";
         await caricaLista(); renderTutto();
       };
@@ -484,7 +550,7 @@
       if (!tickers.length) return;
       if (!window.confirm("Togliere dalla lista " + tickers.length + " titoli (" + descrizione + ")? Le posizioni del portafoglio non vengono toccate.")) return;
       var r = await MA.sb.from("watchlist").delete().eq("user_id", S.utente.id).in("ticker", tickers);
-      $("msgLista").textContent = r.error ? "Non è stato possibile togliere i titoli." : "Tolti " + tickers.length + " titoli dalla lista.";
+      $("msgLista").textContent = r.error ? "Non è stato possibile togliere i titoli." : "Tolti " + tickers.length + " titoli dalla lista (" + descrizione + ").";
       $("msgLista").className = r.error ? "err" : "ok";
       if (!r.error) tickers.forEach(function (t) { delete S.ris[t]; delete S.err[t]; });
       await caricaLista(); renderTutto();
@@ -742,33 +808,59 @@
       }).join("") + "</tbody></table>";
   }
 
+  S.filtroClass = "";
   function renderClassifica() {
     var box = $("boxClassifica");
     var tickers = Object.keys(S.ris).filter(function (t) { return S.wl.some(function (x) { return x.ticker === t; }); });
-    if (!tickers.length) { box.innerHTML = ""; return; }
+    if (!tickers.length) { box.innerHTML = ""; box.removeAttribute("data-ok"); return; }
     var g = { favorevole: [], neutro: [], sfavorevole: [], non_valutabile: [] }, senza = 0;
     tickers.forEach(function (t) { var o = oz(S.ris[t]); if (!o) senza++; else g[o.verdetto].push(t); });
     g.favorevole.sort(ordClass);
     g.neutro.sort(ordClass);
     g.sfavorevole.sort(function (a, b) { return ordClass(b, a); });
     var MAXR = 25;
+    var q = S.filtroClass.trim().toLowerCase();
+    var cerca = function (arr) {
+      if (!q) return arr;
+      return arr.filter(function (t) { return t.toLowerCase().indexOf(q) !== -1 || String(NOMI[t] || "").toLowerCase().indexOf(q) !== -1; });
+    };
     function blocco(titolo, nota, arr, aperto) {
+      var tot = arr.length;
+      arr = cerca(arr);
       if (!arr.length) return "";
-      var visibili = arr.slice(0, MAXR), resto = arr.slice(MAXR);
-      return "<details" + (aperto ? " open" : "") + '><summary><b>' + titolo + " (" + arr.length + ")</b></summary><div class=\"muted\" style=\"margin:4px 0\">" + nota + "</div>" + righeClassifica(visibili) +
+      // con una ricerca attiva: tutti i risultati, sempre visibili
+      var visibili = q ? arr : arr.slice(0, MAXR), resto = q ? [] : arr.slice(MAXR);
+      return "<details" + (aperto || q ? " open" : "") + '><summary><b>' + titolo + " (" + (q ? arr.length + " di " + tot : arr.length) + ")</b></summary><div class=\"muted\" style=\"margin:4px 0\">" + nota + "</div>" + righeClassifica(visibili) +
         (resto.length ? "<details><summary class=\"muted\">Mostra gli altri " + resto.length + "</summary>" + righeClassifica(resto) + "</details>" : "") + "</details>";
     }
-    var h = "<section><h2>Classifica · " + ORIZ[S.orizzonte].nome + " termine (" + ORIZ[S.orizzonte].sub + ")</h2>" +
-      '<div class="muted" style="margin-bottom:8px">Quattro regole sul trend + studio storico: favorevole = almeno 3 criteri su 4 e, in passato, prezzo salito dopo ' + (S.orizzonte === "breve" ? "1 mese" : S.orizzonte === "medio" ? "3 mesi" : "1 anno") +
-      ' in oltre il 55% dei casi con mediana positiva. Sfavorevole = al massimo 1 criterio senza uno storico chiaramente positivo, oppure storico negativo. L\'ordine premia prima l\'affidabilità dello studio. Sono segnali tecnici basati sul passato: non garantiscono guadagni e non sono consigli personalizzati.</div>' +
-      blocco("Segnale favorevole", "Dove le regole e lo storico sono favorevoli.", g.favorevole, true) +
+    var titolo = "Classifica · " + ORIZ[S.orizzonte].nome + " termine (" + ORIZ[S.orizzonte].sub + ")";
+    var corpo = blocco("Segnale favorevole", "Dove le regole e lo storico sono favorevoli.", g.favorevole, true) +
       blocco("Sfavorevoli: da evitare secondo le regole", "Trend debole e/o storico negativo.", g.sfavorevole, true) +
-      blocco("Neutri", "Segnali misti.", g.neutro, false) +
-      (g.non_valutabile.length ? '<div class="muted" style="margin-top:6px">Non valutabili (storico troppo corto o dati insufficienti): ' + g.non_valutabile.map(esc).join(", ") + ".</div>" : "") +
-      (senza ? '<div class="muted" style="margin-top:6px">' + senza + " titoli analizzati prima dell'aggiornamento non hanno ancora lo studio: rianalizzali.</div>" : "") +
-      "</section>";
-    box.innerHTML = h;
-    box.querySelectorAll("[data-vai]").forEach(function (r) {
+      blocco("Neutri", "Segnali misti.", g.neutro, false);
+    if (q && !corpo) corpo = '<div class="muted" style="margin:8px 0">Nessun titolo analizzato corrisponde a «' + esc(S.filtroClass.trim()) + "».</div>";
+    if (!q) {
+      corpo += (g.non_valutabile.length ? '<div class="muted" style="margin-top:6px">Non valutabili (storico troppo corto o dati insufficienti): ' + g.non_valutabile.map(esc).join(", ") + ".</div>" : "") +
+        (senza ? '<div class="muted" style="margin-top:6px">' + senza + " titoli analizzati prima dell'aggiornamento non hanno ancora lo studio: rianalizzali.</div>" : "");
+    }
+    if (box.getAttribute("data-ok") !== "1") {
+      // struttura creata una volta sola, cosi' la casella di ricerca non perde il cursore mentre arrivano i risultati
+      box.innerHTML = '<section><h2 id="classTitolo"></h2>' +
+        '<form id="formCercaClass" class="row" style="margin-bottom:8px"><div><label for="cercaClass">Cerca tra favorevoli, neutri e sfavorevoli (ticker o nome)</label>' +
+        '<input id="cercaClass" type="search" maxlength="30" autocomplete="off" placeholder="es. Apple, oro, VOO" style="margin-bottom:0"></div>' +
+        '<button type="submit" id="btnCercaClass">Cerca</button><button type="button" class="sec" id="btnAzzeraClass">Azzera</button></form>' +
+        '<div class="muted" style="margin-bottom:8px">Quattro regole sul trend + studio storico: favorevole = almeno 3 criteri su 4 e, in passato, prezzo salito dopo <span id="classOrizz"></span> in oltre il 55% dei casi con mediana positiva. Sfavorevole = al massimo 1 criterio senza uno storico chiaramente positivo, oppure storico negativo. L\'ordine premia prima l\'affidabilità dello studio. Sono segnali tecnici basati sul passato: non garantiscono guadagni e non sono consigli personalizzati.</div>' +
+        '<div id="classCorpo"></div></section>';
+      box.setAttribute("data-ok", "1");
+      var applica = function () { S.filtroClass = $("cercaClass").value; renderClassifica(); };
+      $("cercaClass").oninput = applica;
+      $("formCercaClass").onsubmit = function (e) { e.preventDefault(); applica(); };
+      $("btnAzzeraClass").onclick = function () { $("cercaClass").value = ""; applica(); };
+    }
+    $("cercaClass").value !== S.filtroClass && ($("cercaClass").value = S.filtroClass);
+    $("classTitolo").textContent = titolo;
+    $("classOrizz").textContent = S.orizzonte === "breve" ? "1 mese" : S.orizzonte === "medio" ? "3 mesi" : "1 anno";
+    $("classCorpo").innerHTML = corpo;
+    $("classCorpo").querySelectorAll("[data-vai]").forEach(function (r) {
       r.onclick = function () {
         var el = document.querySelector('.card[data-card="' + r.getAttribute("data-vai") + '"]');
         if (el && el.scrollIntoView) { el.scrollIntoView({ behavior: "smooth", block: "center" }); }

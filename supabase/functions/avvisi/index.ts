@@ -48,7 +48,7 @@ Deno.serve(async (req: Request) => {
   if (!urlSito || !mailCfg.apiKey || !mailCfg.da) {
     return risposta({ ok: false, errore: "Configurazione email incompleta: servono SITE_URL, MAIL_FROM e la chiave del servizio email." }, 500);
   }
-  const nome = env("NOME_SERVIZIO", "Monitor Azioni & ETF");
+  const nome = env("NOME_SERVIZIO", "Tickly");
 
   let body: any = {};
   try { body = await req.json(); } catch (_e) { /* vuoto */ }
