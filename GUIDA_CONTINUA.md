@@ -21,7 +21,7 @@ Parti da qui: l'account, il database, il sito e le funzioni li hai già fatti.
 4. Prima analisi dopo l'aggiornamento: se un titolo dà errore, copiami il messaggio (verifica che lo storico lungo funzioni col piano gratuito; altrimenti passa da solo a uno storico più corto).
 
 ## 1 quater. Registro automatico + studio di gruppo (3 minuti, una volta sola)
-(Novità: confronto con il gruppo di titoli simili. Serve rilanciare `schema.sql` e `INSTALLA_FUNZIONI.bat`.)
+(Novità: confronto con il gruppo, nuova grafica chiara/scura con filtri, accesso admin blindato (un solo admin, nessuno può farsi admin dall'app). Serve rilanciare `schema.sql` e `INSTALLA_FUNZIONI.bat`.)
 1. Carica su GitHub i file della cartella `public` (è cambiato `admin.html`) e la cartella `supabase`.
 2. Supabase → *SQL Editor*: incolla tutto `schema.sql` → Run.
 3. Doppio clic su `INSTALLA_FUNZIONI.bat`, poi su `INSTALLA_PRECARICA.bat` (se l'hai già fatto, rifallo: aggiorna la funzione).

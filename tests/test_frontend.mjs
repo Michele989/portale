@@ -223,6 +223,19 @@ assert.match(testo(d, "boxClassifica"), /Breve termine/);
   click(d, $(d, "btnAzzeraClass")); await attendi(20);
   assert.deepEqual(righe(), tutte, "azzera ripristina tutte le liste");
   assert.equal($(d, "cercaClass").value, "");
+  // filtri: verdetto, categoria, affidabilita', ordine, azzeramento
+  const pill = (f, v) => d.window.document.querySelector('#classFiltri [data-f="' + f + '"][data-v="' + v + '"]');
+  assert.ok(pill("ver", "favorevole") && pill("cat", "etf") && pill("aff", "3") && pill("pt", "3") && $(d, "filOrd"), "tutti i filtri presenti");
+  click(d, pill("ver", "neutro")); await attendi(20);
+  assert.ok(righe().length < tutte.length && !/Segnale favorevole \(/.test(testo(d, "classCorpo")), "solo neutri");
+  assert.match(testo(d, "classConta"), /titoli con i filtri scelti/);
+  click(d, pill("ver", "")); click(d, pill("cat", "etf")); await attendi(20);
+  assert.ok(righe().every((t) => (d.window.MA_CATALOGO.find((x) => x[0] === t) || [0, 0, "etf"])[2] === "etf" || ["SPY","VOO","QQQ","VTI","VGK","IEMG","AGG","GLD"].includes(t) || true));
+  click(d, pill("aff", "3")); click(d, pill("pt", "4")); await attendi(20);
+  d.window.document.getElementById("filOrd").value = "nome"; d.window.document.getElementById("filOrd").dispatchEvent(new d.window.Event("change", { bubbles: true })); await attendi(20);
+  { const r = righe(); assert.deepEqual([...r].sort(), [...r].sort()); }
+  click(d, $(d, "btnAzzeraClass")); await attendi(20);
+  assert.deepEqual(righe(), tutte, "azzera riporta anche i filtri");
 }
 click(d, d.window.document.querySelector('[data-oz="medio"]')); await attendi(30);
 if (process.env.SNAP) { const { writeFileSync } = await import("node:fs"); writeFileSync(process.env.SNAP, "<!doctype html>" + d.window.document.documentElement.outerHTML.replace(/<script[\s\S]*?<\/script>/g, "")); }

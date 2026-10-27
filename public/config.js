@@ -5,14 +5,14 @@
 // =========================================================================
 window.CONFIG = {
   // Supabase > Project Settings > API
-  SUPABASE_URL: "https://bwrjriwjfzzvreiuwlni.supabase.co",
-  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3cmpyaXdqZnp6dnJlaXV3bG5pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NTk2ODEsImV4cCI6MjEwNjUzNTY4MX0.EWcNZRIlIUh6UXoWZ-vWfU-v2yqo73pwe9vwNJRDI54",
+  SUPABASE_URL: "INSERISCI_URL_PROGETTO_SUPABASE",
+  SUPABASE_ANON_KEY: "INSERISCI_ANON_KEY_SUPABASE",
 
   // Dati mostrati nel sito e nelle pagine legali
   NOME_SERVIZIO: "Tickly",
-  TITOLARE: "Michele De Rosa",
-  EMAIL_CONTATTO: "michele1198@live.it",
-  CONTATTO_ADMIN: "Email michele1198@live.it",
+  TITOLARE: "INSERISCI NOME E COGNOME (titolare del trattamento)",
+  EMAIL_CONTATTO: "INSERISCI_EMAIL_DI_CONTATTO",
+  CONTATTO_ADMIN: "INSERISCI il tuo contatto (es. WhatsApp o email) per richiedere le chiavi",
   ULTIMO_AGGIORNAMENTO_LEGALE: "09/10/2026",
 
   // Pausa (ms) dopo ogni titolo scaricato "fresco": il piano gratuito Twelve Data

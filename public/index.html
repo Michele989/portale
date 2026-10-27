@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tickly</title>
 <link rel="stylesheet" href="stile.css">
+<script src="tema.js"></script>
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#0b0f0d">
+<meta name="theme-color" content="#f5f6fa">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -835,15 +836,46 @@
   }
 
   S.filtroClass = "";
+  S.fil = { cat: "", ver: "", aff: 0, pt: 0, ord: "" };
+  var FIL_CAT = [["", "Tutte"], ["etf", "ETF"], ["crescita", "Crescita"], ["azioni", "Azioni"]];
+  var FIL_VER = [["", "Tutti"], ["favorevole", "Favorevoli"], ["neutro", "Neutri"], ["sfavorevole", "Sfavorevoli"]];
+  var FIL_AFF = [[0, "Tutte"], [1, "Almeno bassa"], [2, "Almeno media"], [3, "Solo alta"]];
+  var FIL_PT = [[0, "Tutti"], [2, "2+"], [3, "3+"], [4, "4/4"]];
+  var FIL_ORD = [["", "Migliori prima (predefinito)"], ["pos", "% salito in passato"], ["med", "Mediana"], ["pt", "Criteri soddisfatti"], ["nome", "Nome A-Z"]];
+  function pillole(chiave, lista) {
+    return lista.map(function (x) { return '<button type="button" class="pill' + (String(S.fil[chiave]) === String(x[0]) ? " on" : "") + '" data-f="' + chiave + '" data-v="' + x[0] + '" aria-pressed="' + (String(S.fil[chiave]) === String(x[0])) + '">' + x[1] + "</button>"; }).join("");
+  }
+  function passaFiltri(t) {
+    var o = oz(S.ris[t]); if (!o) return false;
+    var f = S.fil;
+    if (f.cat && tipoDi(t) !== f.cat) return false;
+    if (f.aff && (ORD[o.affidabilita] || 0) < f.aff) return false;
+    if (f.pt && o.punteggio < f.pt) return false;
+    return true;
+  }
+  function comparatore(verso) {
+    var f = S.fil.ord;
+    var base = f === "pos" ? function (a, b) { return (statUsata(oz(S.ris[b])).pPositivi || 0) - (statUsata(oz(S.ris[a])).pPositivi || 0); }
+      : f === "med" ? function (a, b) { return (statUsata(oz(S.ris[b])).mediana || 0) - (statUsata(oz(S.ris[a])).mediana || 0); }
+      : f === "pt" ? function (a, b) { return oz(S.ris[b]).punteggio - oz(S.ris[a]).punteggio; }
+      : f === "nome" ? function (a, b) { return a < b ? -1 : a > b ? 1 : 0; }
+      : null;
+    if (!base) return verso === "giu" ? function (a, b) { return ordClass(b, a); } : ordClass;
+    return base;
+  }
   function renderClassifica() {
     var box = $("boxClassifica");
     var tickers = Object.keys(S.ris).filter(function (t) { return S.wl.some(function (x) { return x.ticker === t; }); });
     if (!tickers.length) { box.innerHTML = ""; box.removeAttribute("data-ok"); return; }
     var g = { favorevole: [], neutro: [], sfavorevole: [], non_valutabile: [] }, senza = 0;
     tickers.forEach(function (t) { var o = oz(S.ris[t]); if (!o) senza++; else g[o.verdetto].push(t); });
-    g.favorevole.sort(ordClass);
-    g.neutro.sort(ordClass);
-    g.sfavorevole.sort(function (a, b) { return ordClass(b, a); });
+    var daFiltrare = !!(S.fil.cat || S.fil.ver || S.fil.aff || S.fil.pt);
+    ["favorevole", "neutro", "sfavorevole"].forEach(function (k) { g[k] = g[k].filter(passaFiltri); });
+    if (S.fil.ver) ["favorevole", "neutro", "sfavorevole"].forEach(function (k) { if (k !== S.fil.ver) g[k] = []; });
+    g.favorevole.sort(comparatore("su"));
+    g.neutro.sort(comparatore("su"));
+    g.sfavorevole.sort(comparatore("giu"));
+    var totFiltrati = g.favorevole.length + g.neutro.length + g.sfavorevole.length;
     var MAXR = 25;
     var q = S.filtroClass.trim().toLowerCase();
     var cerca = function (arr) {
@@ -855,16 +887,17 @@
       arr = cerca(arr);
       if (!arr.length) return "";
       // con una ricerca attiva: tutti i risultati, sempre visibili
-      var visibili = q ? arr : arr.slice(0, MAXR), resto = q ? [] : arr.slice(MAXR);
-      return "<details" + (aperto || q ? " open" : "") + '><summary><b>' + titolo + " (" + (q ? arr.length + " di " + tot : arr.length) + ")</b></summary><div class=\"muted\" style=\"margin:4px 0\">" + nota + "</div>" + righeClassifica(visibili) +
+      var tutti = q || daFiltrare, visibili = tutti ? arr : arr.slice(0, MAXR), resto = tutti ? [] : arr.slice(MAXR);
+      return "<details" + (aperto || q || daFiltrare ? " open" : "") + '><summary><b>' + titolo + " (" + (q ? arr.length + " di " + tot : arr.length) + ")</b></summary><div class=\"muted\" style=\"margin:4px 0\">" + nota + "</div>" + righeClassifica(visibili) +
         (resto.length ? "<details><summary class=\"muted\">Mostra gli altri " + resto.length + "</summary>" + righeClassifica(resto) + "</details>" : "") + "</details>";
     }
     var titolo = "Classifica · " + ORIZ[S.orizzonte].nome + " termine (" + ORIZ[S.orizzonte].sub + ")";
     var corpo = blocco("Segnale favorevole", "Dove le regole e lo storico sono favorevoli.", g.favorevole, true) +
       blocco("Sfavorevoli: da evitare secondo le regole", "Trend debole e/o storico negativo.", g.sfavorevole, true) +
       blocco("Neutri", "Segnali misti.", g.neutro, false);
+    if (daFiltrare && !q && !corpo) corpo = '<div class="muted" style="margin:8px 0">Nessun titolo corrisponde ai filtri scelti: allargali o premi «Azzera filtri».</div>';
     if (q && !corpo) corpo = '<div class="muted" style="margin:8px 0">Nessun titolo analizzato corrisponde a «' + esc(S.filtroClass.trim()) + "».</div>";
-    if (!q) {
+    if (!q && !daFiltrare) {
       corpo += (g.non_valutabile.length ? '<div class="muted" style="margin-top:6px">Non valutabili (storico troppo corto o dati insufficienti): ' + g.non_valutabile.map(esc).join(", ") + ".</div>" : "") +
         (senza ? '<div class="muted" style="margin-top:6px">' + senza + " titoli analizzati prima dell'aggiornamento non hanno ancora lo studio: rianalizzali.</div>" : "");
     }
@@ -874,15 +907,30 @@
         '<form id="formCercaClass" class="row" style="margin-bottom:8px"><div><label for="cercaClass">Cerca tra favorevoli, neutri e sfavorevoli (ticker o nome)</label>' +
         '<input id="cercaClass" type="search" maxlength="30" autocomplete="off" placeholder="es. Apple, oro, VOO" style="margin-bottom:0"></div>' +
         '<button type="submit" id="btnCercaClass">Cerca</button><button type="button" class="sec" id="btnAzzeraClass">Azzera</button></form>' +
+        '<div class="filtri" id="classFiltri"></div><div class="conta-ris" id="classConta"></div>' +
         '<div class="muted" style="margin-bottom:8px">Quattro regole sul trend + studio storico: favorevole = almeno 3 criteri su 4 e, in passato, prezzo salito dopo <span id="classOrizz"></span> in oltre il 55% dei casi con mediana positiva. Sfavorevole = al massimo 1 criterio senza uno storico chiaramente positivo, oppure storico negativo. L\'ordine premia prima l\'affidabilità dello studio. Sono segnali tecnici basati sul passato: non garantiscono guadagni e non sono consigli personalizzati.</div>' +
         '<div id="classCorpo"></div></section>';
       box.setAttribute("data-ok", "1");
       var applica = function () { S.filtroClass = $("cercaClass").value; renderClassifica(); };
       $("cercaClass").oninput = applica;
       $("formCercaClass").onsubmit = function (e) { e.preventDefault(); applica(); };
-      $("btnAzzeraClass").onclick = function () { $("cercaClass").value = ""; applica(); };
+      $("btnAzzeraClass").onclick = function () { $("cercaClass").value = ""; S.fil = { cat: "", ver: "", aff: 0, pt: 0, ord: "" }; applica(); };
+      $("classFiltri").addEventListener("click", function (e) {
+        var b = e.target.closest ? e.target.closest("[data-f]") : null; if (!b) return;
+        var k = b.getAttribute("data-f"), v = b.getAttribute("data-v");
+        S.fil[k] = (k === "aff" || k === "pt") ? Number(v) : v; renderClassifica();
+      });
+      $("classFiltri").addEventListener("change", function (e) { if (e.target.id === "filOrd") { S.fil.ord = e.target.value; renderClassifica(); } });
     }
     $("cercaClass").value !== S.filtroClass && ($("cercaClass").value = S.filtroClass);
+    $("classFiltri").innerHTML =
+      '<div class="gruppo"><b>Categoria</b>' + pillole("cat", FIL_CAT) + "</div>" +
+      '<div class="gruppo"><b>Verdetto</b>' + pillole("ver", FIL_VER) + "</div>" +
+      '<div class="gruppo"><b>Affidabilità</b>' + pillole("aff", FIL_AFF) + "</div>" +
+      '<div class="gruppo"><b>Criteri</b>' + pillole("pt", FIL_PT) + "</div>" +
+      '<div class="gruppo"><b>Ordina per</b><label for="filOrd" style="position:absolute;left:-9999px">Ordina per</label><select id="filOrd">' +
+        FIL_ORD.map(function (x) { return '<option value="' + x[0] + '"' + (S.fil.ord === x[0] ? " selected" : "") + ">" + x[1] + "</option>"; }).join("") + "</select></div>";
+    $("classConta").textContent = (daFiltrare ? totFiltrati + " titoli con i filtri scelti" : tickers.length + " titoli analizzati") + (q ? " · ricerca: «" + S.filtroClass.trim() + "»" : "");
     $("classTitolo").textContent = titolo;
     $("classOrizz").textContent = S.orizzonte === "breve" ? "1 mese" : S.orizzonte === "medio" ? "3 mesi" : "1 anno";
     $("classCorpo").innerHTML = corpo;

@@ -603,3 +603,20 @@ revoke all on function public.disattiva_avvisi(uuid) from public, anon, authenti
 grant execute on function public.avvisi_destinatari() to service_role;
 grant execute on function public.avvisi_recenti() to service_role;
 grant execute on function public.disattiva_avvisi(uuid) to service_role;
+
+-- 9) BLINDATURA ADMIN: nessun utente (nemmeno loggato) puo' scrivere nella tabella admins
+--    dall'app; l'unico modo per diventare admin e' questa query nel SQL Editor (solo tu).
+--    In piu' un trigger impedisce che ci sia piu' di UN amministratore: se un domani ne vuoi
+--    uno in piu', elimina prima il trigger "un_solo_admin".
+revoke insert, update, delete, truncate on public.admins from public, anon, authenticated;
+create or replace function public.un_solo_admin() returns trigger
+language plpgsql as $$
+begin
+  if (select count(*) from public.admins where user_id <> new.user_id) >= 1 then
+    raise exception 'Esiste gia'' un amministratore.';
+  end if;
+  return new;
+end $$;
+drop trigger if exists un_solo_admin on public.admins;
+create trigger un_solo_admin before insert on public.admins
+  for each row execute function public.un_solo_admin();

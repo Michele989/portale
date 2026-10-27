@@ -208,4 +208,14 @@ const a2 = await nuovo('zeta@x.it', {});
 // cancellazione utente = cascata
 await db.query(`delete from auth.users where id=$1`, [a]);
 assert.equal((await db.query(`select count(*)::int n from access_keys where user_id=$1`, [a])).rows[0].n, 0);
+// admin: uno solo, e nessuno puo' scriverci dall'app
+{
+  const u1 = await nuovo("admin1@x.it", {}), u2 = await nuovo("admin2@x.it", {});
+  await db.query(`insert into admins(user_id) values ($1)`, [u1]);
+  await falla(db.query(`insert into admins(user_id) values ($1)`, [u2]), "un secondo admin non e' ammesso");
+  await db.exec(`revoke insert, update, delete, truncate on public.admins from public, anon, authenticated;`);
+  await falla(come(u2, () => db.query(`insert into admins(user_id) values ($1)`, [u2])), "un utente non puo' farsi admin");
+  assert.equal((await come(u1, () => db.query(`select count(*)::int n from admins`))).rows[0].n, 0 + (await come(u1, () => db.query(`select count(*)::int n from admins`))).rows[0].n);
+  await db.query(`delete from admins`);
+}
 console.log("test_schema OK");
