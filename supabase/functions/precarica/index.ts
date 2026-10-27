@@ -10,6 +10,7 @@ import { creaDati, ErroreServizio } from "../_shared/dati.ts";
 import { eseguiPrecarica } from "../_shared/precarica.ts";
 import { CATALOGO_TICKER } from "../_shared/catalogo_tickers.ts";
 import { elaboraVerdetti } from "../_shared/registro_verdetti.ts";
+import { leggiGruppo, salvaContributo } from "../_shared/gruppo.ts";
 
 const env = (k: string, d = "") => Deno.env.get(k) ?? d;
 const sb = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
@@ -44,7 +45,9 @@ Deno.serve(async (req: Request) => {
       },
       dopo: async (t, barre) => {
         const { data: aperti } = await sb.from("verdetti_orizzonte").select("id, orizzonte, data_verdetto").eq("ticker", t).is("data_esito", null);
-        const { nuovi, chiusure } = elaboraVerdetti(t, barre as any, (aperti || []) as any);
+        await salvaContributo(sb, t, barre as any); // alimenta lo studio di gruppo
+        const { dati } = await leggiGruppo(sb, t, barre as any);
+        const { nuovi, chiusure } = elaboraVerdetti(t, barre as any, (aperti || []) as any, new Date(), dati);
         if (nuovi.length) await sb.from("verdetti_orizzonte").upsert(nuovi, { onConflict: "ticker,orizzonte,data_verdetto", ignoreDuplicates: true });
         for (const c of chiusure) await sb.from("verdetti_orizzonte").update({ data_esito: c.data_esito, rendimento: c.rendimento }).eq("id", c.id);
       },

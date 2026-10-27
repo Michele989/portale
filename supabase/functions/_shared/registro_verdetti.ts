@@ -3,7 +3,7 @@
 import type { Barra } from "./analisi.ts";
 import { controllaDati } from "./analisi.ts";
 import { analizzaOrizzonti, ORIZZONTI } from "./orizzonti.ts";
-import type { NomeOrizzonte } from "./orizzonti.ts";
+import type { DatiGruppo, NomeOrizzonte } from "./orizzonti.ts";
 
 export interface RigaVerdetto {
   ticker: string; orizzonte: NomeOrizzonte; data_verdetto: string; prezzo: number; verdetto: string; punteggio: number;
@@ -14,6 +14,7 @@ export interface Chiusura { id: number; data_esito: string; rendimento: number }
 // recenti = barre dal piu' recente (come in cache). aperti = verdetti non ancora chiusi del titolo.
 export function elaboraVerdetti(
   ticker: string, recenti: Barra[], aperti: RigaAperta[], oggi: Date = new Date(),
+  gruppo?: Partial<Record<NomeOrizzonte, DatiGruppo | null>>,
 ): { nuovi: RigaVerdetto[]; chiusure: Chiusura[] } {
   const cron = recenti.slice().reverse();
   const nuovi: RigaVerdetto[] = [];
@@ -32,7 +33,7 @@ export function elaboraVerdetti(
   const q = controllaDati(recenti, oggi);
   if (!q.gravi) {
     const ultima = cron[cron.length - 1];
-    const studio = analizzaOrizzonti(cron, { datiOk: true });
+    const studio = analizzaOrizzonti(cron, { datiOk: true, senzaVentaglio: true, gruppo });
     for (const nome of Object.keys(ORIZZONTI) as NomeOrizzonte[]) {
       const s = studio[nome];
       if (!s || s.verdetto === "non_valutabile") continue;

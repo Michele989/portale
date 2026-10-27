@@ -98,7 +98,20 @@ Deno.serve(async (req: Request) => {
       case "verdetti": {
         const { data, error } = await sb.rpc("verdetti_conteggi");
         if (error || !data) return risposta({ ok: false, errore: "Registro non disponibile: esegui di nuovo schema.sql in Supabase." }, 500);
-        return risposta({ ok: true, dal: data.dal, orizzonti: riepilogoVerdetti(data.righe || [], data.aperti || {}) });
+        // Anteprima: verdetti dell'ultimo giorno registrato, per orizzonte
+        const { data: ultimoGiorno } = await sb.from("verdetti_orizzonte").select("data_verdetto").order("data_verdetto", { ascending: false }).limit(1);
+        const giorno = ultimoGiorno && ultimoGiorno[0] ? ultimoGiorno[0].data_verdetto : null;
+        const oggi: Record<string, Record<string, number>> = {};
+        if (giorno) {
+          const nomi = ["breve", "medio", "lungo"], verd = ["favorevole", "neutro", "sfavorevole"];
+          const conteggi = await Promise.all(nomi.flatMap((o) => verd.map(async (v) => {
+            const { count } = await sb.from("verdetti_orizzonte").select("id", { count: "exact", head: true })
+              .eq("data_verdetto", giorno).eq("orizzonte", o).eq("verdetto", v);
+            return { o, v, n: count || 0 };
+          })));
+          for (const c of conteggi) { (oggi[c.o] = oggi[c.o] || {})[c.v] = c.n; }
+        }
+        return risposta({ ok: true, dal: data.dal, giorno, oggi, orizzonti: riepilogoVerdetti(data.righe || [], data.aperti || {}) });
       }
 
       case "crea_chiave": {

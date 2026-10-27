@@ -803,6 +803,13 @@
         "variazione mediana " + sg(u.mediana, 1) + "%; nell'80% dei casi tra " + sg(u.p10, 1) + "% e " + sg(u.p90, 1) + "%; peggior caso " + sg(u.peggiore, 0) + "%, migliore " + sg(u.migliore, 0) + "%. " +
         "Periodi indipendenti: " + u.indipendenti + ".</div>";
     }
+    var gr = o.gruppo;
+    if (gr && gr.n) {
+      h += '<div style="margin-top:6px"><b>Confronto con il gruppo «' + esc(gr.nome) + '»</b> (' + gr.titoli + " titoli del catalogo nella stessa situazione di oggi, circa " + gr.indipendenti + " periodi indipendenti): " +
+        "dopo " + o.giorni + " giorni di borsa il prezzo era più alto nel <b>" + fmt(gr.pPositivi, 0) + "%</b> dei casi; variazione mediana " + sg(gr.mediana, 1) + "%; nell'80% dei casi tra " + sg(gr.p10, 0) + "% e " + sg(gr.p90, 0) + "%. " +
+        (o.confermaGruppo === true ? '<span class="ok">Il gruppo conferma il segnale.</span> ' : o.confermaGruppo === false ? '<span class="err">Il gruppo non conferma il segnale.</span> ' : "Campione di gruppo ancora piccolo: non lo uso per il verdetto. ") +
+        '<span class="muted">I titoli si muovono in parte insieme: la precisione reale del gruppo è inferiore a quella apparente.</span></div>';
+    }
     if (v) {
       h += "<div style=\"margin-top:6px\"><b>Esempio di andamento possibile</b> (simulazione con le oscillazioni degli ultimi " + fmt(v.campioni / 252, 1) + " anni, senza ipotizzare alcuna tendenza): " +
         "tra " + o.giorni + " giorni il prezzo starebbe tra <b>" + fmt(a.prezzo * (1 + v.finale.p10 / 100)) + "</b> (" + sg(v.finale.p10, 0) + "%) e <b>" + fmt(a.prezzo * (1 + v.finale.p90 / 100)) + "</b> (" + sg(v.finale.p90, 0) + "%) nell'80% dei casi. " +

@@ -60,4 +60,53 @@ assert.ok(["bassa", "insufficiente"].includes(anomalo.breve.affidabilita), "dati
 const v1 = su.breve.ventaglio, v3 = su.lungo.ventaglio;
 assert.ok(v3.finale.p90 - v3.finale.p10 > v1.finale.p90 - v1.finale.p10, "ventaglio piu' largo sul lungo");
 assert.ok(Math.abs(v1.finale.p50) < 5, "centro vicino a zero");
+
+// 7) dati di gruppo: contributo di un titolo, aggregazione, conferma e rafforzamento
+{
+  const ser = serie(1500, 21, 0.0008);
+  const contr = O.contributoProfili(ser);
+  assert.ok(contr.length >= 3 && contr.length <= 12, "profili presenti: " + contr.length);
+  for (const r of contr) {
+    assert.equal(r.hist.length, O.HIST_LEN); assert.equal(r.hist.reduce((a, b) => a + b, 0), r.n, "istogramma = casi");
+    assert.ok(r.pos <= r.n && r.indip >= 1 && r.indip <= r.n);
+  }
+  // somma dei profili = tutti i casi con profilo calcolabile; il profilo di oggi esiste tra quelli contati
+  const oggi = O.profiliOggi(ser);
+  for (const k of ["breve", "medio", "lungo"]) {
+    if (oggi[k] !== null) assert.ok(contr.some((r) => r.orizzonte === k && r.profilo === oggi[k]), "profilo di oggi nei contributi: " + k);
+  }
+  // indice istogramma e quantili
+  assert.equal(O.indiceHist(-0.9), 0); assert.equal(O.indiceHist(5), O.HIST_LEN - 1); assert.equal(O.indiceHist(0), 51); assert.equal(O.indiceHist(0.0099), 51); assert.equal(O.indiceHist(0.01), 52);
+  const h = new Array(O.HIST_LEN).fill(0); h[O.indiceHist(0.05)] = 100; h[O.indiceHist(-0.05)] = 100;
+  const sg = O.statGruppo("ETF", { titoli: 20, n: 200, indip: 100, pos: 100, hist: h });
+  assert.equal(sg.pPositivi, 50); assert.ok(Math.abs(sg.p90 - 5.5) < 0.6 && Math.abs(sg.p10 - (-4.5)) < 0.6, "quantili dall'istogramma: " + sg.p10 + " " + sg.p90);
+  assert.equal(O.statGruppo("x", null), null);
+
+  // gruppo che NON conferma: un verdetto favorevole diventa neutro
+  const base = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true });
+  assert.equal(base.medio.ventaglio, null, "senzaVentaglio");
+  const gruppoNegativo = (pos, n) => { const hh = new Array(O.HIST_LEN).fill(0); hh[O.indiceHist(-0.02)] = n - pos; hh[O.indiceHist(0.02)] = pos; return { titoli: 40, n, indip: 400, pos, hist: hh }; };
+  const conNeg = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true, gruppo: { breve: gruppoNegativo(40, 100), medio: gruppoNegativo(40, 100), lungo: gruppoNegativo(40, 100) }, nomeGruppo: "ETF" });
+  for (const k of ["breve", "medio", "lungo"]) {
+    assert.equal(conNeg[k].confermaGruppo, false, k + " non confermato");
+    assert.notEqual(conNeg[k].verdetto, "favorevole", k + ": mai favorevole se il gruppo non conferma");
+    assert.equal(conNeg[k].gruppo.nome, "ETF");
+  }
+  if (base.medio.verdetto === "favorevole") { assert.equal(conNeg.medio.verdetto, "neutro"); assert.ok(conNeg.medio.motivi.some((m) => /gruppo.*non conferma/.test(m))); }
+  // gruppo che conferma e campione ampio: affidabilita' sale di un livello (non oltre "alta")
+  const gruppoBuono = { titoli: 40, n: 4000, indip: 600, pos: 2600, hist: (() => { const hh = new Array(O.HIST_LEN).fill(0); hh[O.indiceHist(0.03)] = 2600; hh[O.indiceHist(-0.02)] = 1400; return hh; })() };
+  const conBuono = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true, gruppo: { breve: gruppoBuono, medio: gruppoBuono, lungo: gruppoBuono } });
+  const ord = { insufficiente: 0, bassa: 1, media: 2, alta: 3 };
+  for (const k of ["breve", "medio", "lungo"]) {
+    assert.equal(conBuono[k].confermaGruppo, true);
+    assert.ok(ord[conBuono[k].affidabilita] >= ord[base[k].affidabilita], k + ": l'affidabilita' non scende");
+    if (base[k].affidabilita === "bassa" || base[k].affidabilita === "media") assert.equal(ord[conBuono[k].affidabilita], ord[base[k].affidabilita] + 1, k + ": sale di un livello");
+  }
+  // campione di gruppo troppo piccolo: nessuna conferma e nessun effetto
+  const piccolo = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true, gruppo: { medio: { titoli: 3, n: 30, indip: 5, pos: 3, hist: gruppoBuono.hist } } });
+  assert.equal(piccolo.medio.confermaGruppo, null); assert.equal(piccolo.medio.verdetto, base.medio.verdetto); assert.equal(piccolo.medio.affidabilita, base.medio.affidabilita);
+  // dati con anomalie: nessun rafforzamento
+  const anom = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true, datiOk: false, gruppo: { breve: gruppoBuono } });
+  assert.ok(["bassa", "insufficiente"].includes(anom.breve.affidabilita));
+}
 console.log("test_orizzonti OK", { medio: su.medio.verdetto, affid: su.medio.affidabilita, pPos: Math.round(su.medio.storico.tutti.pPositivi), indLungo: su.lungo.storico.tutti.indipendenti });

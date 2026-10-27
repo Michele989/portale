@@ -160,6 +160,51 @@ const a2 = await nuovo('zeta@x.it', {});
   assert.equal((await db.query(`select jsonb_array_length(avvisi_destinatari()) n`)).rows[0].n, 0);
 }
 
+// precaricamento notturno: elenco dei titoli non aggiornati
+{
+  await db.query(`delete from price_cache`); await db.query(`delete from watchlist`); await db.query(`delete from portfolio`);
+  await db.query(`insert into watchlist(user_id,ticker) values ($1,'PRE1'),($1,'PRE2'),($1,'PRE3') on conflict do nothing`, [a]);
+  await db.query(`insert into price_cache(ticker,dati,aggiornato_il) values ('PRE1','{"b":[],"v":2}', now())`);   // scaricato dopo l'ultima chiusura: escluso
+  await db.query(`insert into price_cache(ticker,dati,aggiornato_il) values ('PRE2','{"b":[],"v":2}', now() - interval '3 days')`); // vecchio
+  await db.query(`insert into price_cache(ticker,dati,aggiornato_il) values ('PRE3','{"b":[]}', now() - interval '1 hour')`);         // versione vecchia
+  const l = (await db.query(`select ticker from titoli_da_precaricare(50)`)).rows.map((x) => x.ticker);
+  assert.ok(l.includes("SPY") && l.includes("PRE2") && l.includes("PRE3") && !l.includes("PRE1"), l.join());
+  assert.equal(l.indexOf("SPY"), 0, "mai scaricati per primi");
+  assert.equal((await db.query(`select count(*)::int n from titoli_da_precaricare(1)`)).rows[0].n, 1);
+  const ex = (await db.query(`select ticker from titoli_da_precaricare(50, array['zzx1','ZZX2','bad ticker!'])`)).rows.map((x) => x.ticker);
+  const ordine = (await db.query(`select ticker from titoli_da_precaricare(50, array['AAA1'])`)).rows.map((x) => x.ticker);
+  assert.ok(ordine.indexOf("PRE2") < ordine.indexOf("AAA1") && ordine.indexOf("SPY") < ordine.indexOf("AAA1"), "prima i titoli dei clienti: " + ordine.join());
+  assert.ok(ex.includes("ZZX1") && ex.includes("ZZX2") && !ex.some((t) => /bad/i.test(t)), "extra dal catalogo: " + ex.join());
+  await db.exec(`set role authenticated`); await falla(db.query(`select * from titoli_da_precaricare(5)`), "vietata ai client"); await db.exec(`reset role`);
+  await db.query(`delete from watchlist where ticker like 'PRE%'`);
+  // registro verdetti
+  await db.query(`insert into verdetti_orizzonte(ticker,orizzonte,data_verdetto,prezzo,verdetto,punteggio,data_esito,rendimento) values
+    ('V1','breve','2026-01-02',100,'favorevole',3,'2026-02-02',4),('V2','breve','2026-01-02',100,'favorevole',3,'2026-02-02',-1),
+    ('V3','breve','2026-01-02',100,'sfavorevole',0,'2026-02-02',-2),('V4','breve','2026-01-02',100,'neutro',2,null,null)`);
+  const vc = (await db.query(`select verdetti_conteggi() r`)).rows[0].r;
+  const fav = vc.righe.find((x) => x.verdetto === "favorevole");
+  assert.equal(fav.n, 2); assert.equal(fav.positivi, 1); assert.equal(vc.aperti.breve, 1);
+  await falla(db.query(`insert into verdetti_orizzonte(ticker,orizzonte,data_verdetto,prezzo,verdetto) values ('V1','breve','2026-01-02',1,'neutro')`), "unico per giorno");
+  await db.exec(`set role authenticated`); await falla(db.query(`select verdetti_conteggi()`), "vietata ai client"); await db.exec(`reset role`);
+  await db.query(`delete from verdetti_orizzonte`);
+}
+
+// studio di gruppo: aggregazione nel database
+{
+  const hist = (...coppie) => { const a = new Array(152).fill(0); for (const [i, v] of coppie) a[i] = v; return JSON.stringify(a); };
+  await db.query(`delete from profili_titolo`);
+  await db.query(`insert into profili_titolo(ticker,gruppo,orizzonte,profilo,n,indip,pos,hist) values
+    ('G1','etf','breve',3,100,10,60,$1), ('G2','etf','breve',3,50,5,20,$2), ('G3','azioni','breve',3,999,99,500,$1), ('G1','etf','medio',1,10,1,5,$1)`, [hist([51, 60], [40, 40]), hist([51, 20], [40, 30])]);
+  const r = (await db.query(`select studio_gruppo('etf', '[{"o":"breve","p":3},{"o":"lungo","p":0}]'::jsonb) r`)).rows[0].r;
+  const b = r.find((x) => x.o === "breve"), l = r.find((x) => x.o === "lungo");
+  assert.equal(b.titoli, 2); assert.equal(b.n, 150); assert.equal(b.indip, 15); assert.equal(b.pos, 80);
+  assert.equal(b.hist.length, 152); assert.equal(b.hist[51], 80); assert.equal(b.hist[40], 70); assert.equal(b.hist.reduce((a, x) => a + x, 0), 150, "istogramma sommato");
+  assert.equal(l.n, 0); assert.deepEqual(l.hist, [], "profilo senza dati");
+  await db.exec(`set role authenticated`); await falla(db.query(`select studio_gruppo('etf','[]'::jsonb)`), "vietata ai client"); await db.exec(`reset role`);
+  await falla(db.query(`insert into profili_titolo(ticker,gruppo,orizzonte,profilo,n,indip,pos,hist) values ('X1','boh','breve',1,1,1,1,'[]')`), "gruppo non valido");
+  await db.query(`delete from profili_titolo`);
+}
+
 // cancellazione utente = cascata
 await db.query(`delete from auth.users where id=$1`, [a]);
 assert.equal((await db.query(`select count(*)::int n from access_keys where user_id=$1`, [a])).rows[0].n, 0);

@@ -8,7 +8,7 @@ function creaSb(cacheIniziale) {
   const st = { cache: cacheIniziale, upsert: 0 };
   return { st, from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: st.cache }) }) }), upsert: async (r) => { st.upsert++; st.cache = { dati: r.dati, aggiornato_il: r.aggiornato_il }; return {}; } }) };
 }
-const compatta = (n) => A.comprimi(A.daTwelveData(righe(n)));
+const compatta = (n) => ({ ...A.comprimi(A.daTwelveData(righe(n))), v: 2 });
 let risposta, chiamate = 0;
 globalThis.fetch = async () => { chiamate++; return { json: async () => risposta }; };
 const cfg = { tdKey: "K", cacheOre: 6, storicoGiorni: 1300 };
@@ -50,4 +50,30 @@ risposta = { code: 500, status: "error", message: "boom" };
 await assert.rejects(creaDati(creaSb(null), cfg).datiTitolo("AAA"), (e) => e.codice === "ERRORE_DATI" && /500/.test(e.message) && /boom/.test(e.message));
 globalThis.fetch = async () => { throw new Error("rete"); };
 await assert.rejects(creaDati(creaSb(null), cfg).datiTitolo("AAA"), (e) => e.codice === "ERRORE_DATI");
+// versione cache: la vecchia (senza v) non vale come fresca, ma serve da ripiego
+const vecchia = () => ({ dati: A.comprimi(A.daTwelveData(righe(100))), aggiornato_il: ore(1) });
+const nuova = () => ({ dati: compatta(100), aggiornato_il: ore(1) });
+globalThis.fetch = async () => { chiamate++; return { json: async () => risposta }; };
+risposta = { values: righe(140) }; chiamate = 0;
+r = await creaDati(creaSb(vecchia()), cfg).datiTitolo("AAA"); assert.equal(r.scaricato, true, "cache v1 riscaricata"); assert.equal(r.barre.length, 140);
+chiamate = 0; r = await creaDati(creaSb(nuova()), cfg).datiTitolo("AAA"); assert.equal(chiamate, 0, "cache v2 fresca usata");
+// salvataggio con marcatori + richiesta con adjust=all e storico lungo
+let urlVisti = [];
+globalThis.fetch = async (u) => { urlVisti.push(String(u)); return { json: async () => risposta }; };
+sb = creaSb(null); await creaDati(sb, { ...cfg, storicoGiorni: 5000 }).datiTitolo("AAA");
+assert.equal(sb.st.cache.dati.v, 2); assert.equal(sb.st.cache.dati.adj, 1);
+assert.ok(/outputsize=5000/.test(urlVisti[0]) && /adjust=all/.test(urlVisti[0]), urlVisti[0]);
+// il piano rifiuta lo storico lungo: ripiega a 1300 con adjust, poi senza adjust
+urlVisti = [];
+globalThis.fetch = async (u) => { urlVisti.push(String(u)); return { json: async () => (/outputsize=5000/.test(u) ? { code: 400, status: "error", message: "outputsize too large for your plan" } : { values: righe(140) }) }; };
+sb = creaSb(null); r = await creaDati(sb, { ...cfg, storicoGiorni: 5000 }).datiTitolo("AAA");
+assert.equal(r.barre.length, 140); assert.equal(urlVisti.length, 2); assert.ok(/outputsize=1300/.test(urlVisti[1]) && /adjust=all/.test(urlVisti[1]));
+urlVisti = [];
+globalThis.fetch = async (u) => { urlVisti.push(String(u)); return { json: async () => (/adjust=all/.test(u) ? { code: 403, status: "error", message: "adjust available on Pro" } : { values: righe(140) }) }; };
+sb = creaSb(null); r = await creaDati(sb, { ...cfg, storicoGiorni: 5000 }).datiTitolo("AAA");
+assert.equal(urlVisti.length, 3); assert.ok(!/adjust/.test(urlVisti[2])); assert.equal(sb.st.cache.dati.adj, 0);
+// "symbol not found" resta ticker non trovato, senza ripieghi
+urlVisti = [];
+globalThis.fetch = async (u) => { urlVisti.push(String(u)); return { json: async () => ({ code: 400, status: "error", message: "**symbol** not found" }) }; };
+await assert.rejects(creaDati(creaSb(null), cfg).datiTitolo("ZZZ"), (e) => e.codice === "TICKER_NON_TROVATO"); assert.equal(urlVisti.length, 1);
 console.log("test_dati OK");

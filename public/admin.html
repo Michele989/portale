@@ -69,7 +69,7 @@
   <section class="card">
     <h2>Affidabilità reale dei verdetti</h2>
     <p class="muted">Si compila da sola: ogni notte il sistema salva il verdetto di ogni titolo e, passato l'orizzonte (1, 3, 12 mesi), registra cosa è successo davvero. «Azzeccati» = favorevole seguito da rialzo, sfavorevole seguito da ribasso o pareggio. Il confronto giusto è con «Caso» (quanti periodi sono saliti in totale): un verdetto utile deve stare chiaramente sopra. Non citare queste percentuali ai clienti sotto i 100 casi chiusi.</p>
-    <div class="scroll"><table id="tabVerdetti"></table></div>
+    <div id="tabVerdetti" class="verd-griglia"></div>
     <div id="msgVerdetti" class="muted"></div>
   </section>
 </div>
@@ -192,10 +192,17 @@
       else if (c.ic) t += ' <span class="muted">(' + c.ic[0].toFixed(0) + "–" + c.ic[1].toFixed(0) + "%)</span>";
       return t;
     };
-    var h = "<tr><th>Orizzonte</th><th>Casi chiusi</th><th>Ancora aperti</th><th>Caso (periodi saliti)</th><th>Favorevole azzeccati</th><th>Sfavorevole azzeccati</th></tr>";
+    var h = "";
     (r.orizzonti || []).forEach(function (o) {
       var nome = { breve: "Breve (1 mese)", medio: "Medio (3 mesi)", lungo: "Lungo (12 mesi)" }[o.orizzonte] || o.orizzonte;
-      h += "<tr><td>" + nome + "</td><td>" + o.chiusi + "</td><td>" + o.aperti + "</td><td>" + p(o.base_positivi) + "</td><td>" + cella(o.favorevole) + "</td><td>" + cella(o.sfavorevole) + "</td></tr>";
+      var t = (r.oggi && r.oggi[o.orizzonte]) || null;
+      h += '<div class="verd-card"><b>' + nome + '</b>' +
+        '<div class="muted">Verdetti di oggi' + (r.giorno ? " (" + esc(r.giorno) + ")" : "") + ": " + (t ? '<span class="ok">' + (t.favorevole || 0) + " favorevoli</span> · " + (t.neutro || 0) + " neutri · " + '<span class="err">' + (t.sfavorevole || 0) + " sfavorevoli</span>" : "nessuno ancora") + "</div>" +
+        '<div class="verd-riga"><span>Ancora aperti</span><span>' + o.aperti + "</span></div>" +
+        '<div class="verd-riga"><span>Casi chiusi</span><span>' + o.chiusi + "</span></div>" +
+        '<div class="verd-riga"><span>Caso (periodi saliti)</span><span>' + p(o.base_positivi) + "</span></div>" +
+        '<div class="verd-riga"><span>Favorevole azzeccati</span><span>' + cella(o.favorevole) + "</span></div>" +
+        '<div class="verd-riga"><span>Sfavorevole azzeccati</span><span>' + cella(o.sfavorevole) + "</span></div></div>";
     });
     $("tabVerdetti").innerHTML = h;
     $("msgVerdetti").textContent = r.dal ? "Registro attivo dal " + r.dal + "." : "Nessun verdetto registrato ancora: parte dalla prima notte di precaricamento.";

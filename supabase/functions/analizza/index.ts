@@ -8,6 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { opzioniCors, risposta, tokenDa } from "../_shared/http.ts";
 import { analizzaSerie, limita, statisticheStandard, statoMercato, valutaSegnale } from "../_shared/analisi.ts";
 import { creaDati, ErroreServizio } from "../_shared/dati.ts";
+import { leggiGruppo } from "../_shared/gruppo.ts";
 import { analizzaOrizzonti } from "../_shared/orizzonti.ts";
 import type { Barra } from "../_shared/analisi.ts";
 
@@ -17,6 +18,7 @@ const sb = createClient(
   { auth: { persistSession: false, autoRefreshToken: false } },
 );
 const TD_KEY = Deno.env.get("TWELVEDATA_API_KEY") ?? "";
+const NOMI_GRUPPO: Record<string, string> = { etf: "ETF", crescita: "Crescita", azioni: "Azioni" };
 const CACHE_ORE = Number(Deno.env.get("CACHE_ORE") ?? "20");
 const STORICO_GIORNI = Number(Deno.env.get("STORICO_GIORNI") ?? "5000");
 
@@ -92,7 +94,10 @@ Deno.serve(async (req: Request) => {
     await registra(ticker, barre, analisi); // registro segnali e statistiche: non blocca mai l'analisi
     // Studio per orizzonte (breve/medio/lungo): un eventuale errore non blocca mai l'analisi
     let orizzonti = null;
-    try { orizzonti = analizzaOrizzonti(barre.slice().reverse(), { datiOk: !analisi.qualita.gravi }); } catch (_e) { orizzonti = null; }
+    try {
+      const { gruppo, dati } = await leggiGruppo(sb, ticker, barre);
+      orizzonti = analizzaOrizzonti(barre.slice().reverse(), { datiOk: !analisi.qualita.gravi, gruppo: dati, nomeGruppo: NOMI_GRUPPO[gruppo] || gruppo });
+    } catch (_e) { orizzonti = null; }
     return risposta({ ok: true, ticker, ...analisi, orizzonti, dati_del: aggiornato, usi_rimasti: rimasti });
   } catch (e) {
     const { data: ripristinati } = await sb.rpc("rimborsa_uso", { p_user: userId });

@@ -1,6 +1,6 @@
 { "name": "portale-tests", "private": true, "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types --no-warnings test_analisi.mjs && node --experimental-strip-types --no-warnings test_affidabilita.mjs && node --experimental-strip-types --no-warnings test_orizzonti.mjs && node --experimental-strip-types --no-warnings test_avvisi.mjs && node --experimental-strip-types --no-warnings test_dati.mjs && node test_schema.mjs && node --experimental-strip-types --no-warnings test_frontend.mjs && node test_smoke.mjs",
+    "test": "node --experimental-strip-types --no-warnings test_analisi.mjs && node --experimental-strip-types --no-warnings test_affidabilita.mjs && node --experimental-strip-types --no-warnings test_orizzonti.mjs && node --experimental-strip-types --no-warnings test_avvisi.mjs && node --experimental-strip-types --no-warnings test_dati.mjs && node --experimental-strip-types --no-warnings test_precarica.mjs && node --experimental-strip-types --no-warnings test_verdetti.mjs && node --experimental-strip-types --no-warnings test_gruppo.mjs && node test_schema.mjs && node --experimental-strip-types --no-warnings test_frontend.mjs && node test_smoke.mjs",
     "tipi": "tsc -p tsconfig.json",
     "smoke": "node smoke_live.mjs"
   },

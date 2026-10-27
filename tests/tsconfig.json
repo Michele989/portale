@@ -18,6 +18,7 @@
   "../supabase/functions/analizza/index.ts",
   "../supabase/functions/admin/index.ts",
   "../supabase/functions/avvisi/index.ts",
+  "../supabase/functions/precarica/index.ts",
   "../supabase/functions/disiscrivi/index.ts",
   "../supabase/functions/_shared/analisi.ts",
   "../supabase/functions/_shared/avvisi.ts",

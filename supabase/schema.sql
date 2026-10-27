@@ -242,6 +242,49 @@ $$;
 revoke all on function public.verdetti_conteggi() from public, anon, authenticated;
 grant execute on function public.verdetti_conteggi() to service_role;
 
+-- 6g) Studio di GRUPPO: per ogni titolo del catalogo, orizzonte e profilo di mercato, quanti casi storici,
+--     quanti periodi indipendenti, quanti positivi e la distribuzione dei rendimenti.
+--     Si aggiorna ogni notte; serve a confrontare un titolo con tutti i titoli simili (stessa categoria).
+create table if not exists public.profili_titolo (
+  ticker text not null check (ticker ~ '^[A-Z0-9.-]{1,12}$'),
+  gruppo text not null check (gruppo in ('azioni', 'etf', 'crescita')),
+  orizzonte text not null check (orizzonte in ('breve', 'medio', 'lungo')),
+  profilo smallint not null,
+  n integer not null,
+  indip integer not null,
+  pos integer not null,
+  hist jsonb not null,
+  aggiornato_il timestamptz not null default now(),
+  primary key (ticker, orizzonte, profilo)
+);
+create index if not exists profili_titolo_gruppo_idx on public.profili_titolo (gruppo, orizzonte, profilo);
+alter table public.profili_titolo enable row level security;  -- nessuna policy: solo server
+
+-- p_chiavi = [{"o":"breve","p":3}, ...]  ->  per ciascuna coppia i dati sommati su tutto il gruppo
+create or replace function public.studio_gruppo(p_gruppo text, p_chiavi jsonb)
+returns jsonb
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'o', k.o, 'p', k.p,
+      'titoli', coalesce(t.titoli, 0), 'n', coalesce(t.n, 0), 'indip', coalesce(t.indip, 0), 'pos', coalesce(t.pos, 0),
+      'hist', coalesce(h.hist, '[]'::jsonb))), '[]'::jsonb)
+  from (select (e->>'o')::text o, (e->>'p')::smallint p from jsonb_array_elements(p_chiavi) e) k
+  left join lateral (
+    select count(*)::int titoli, sum(n)::int n, sum(indip)::int indip, sum(pos)::int pos
+      from public.profili_titolo x where x.gruppo = p_gruppo and x.orizzonte = k.o and x.profilo = k.p) t on true
+  left join lateral (
+    select jsonb_agg(s order by kk) hist
+      from (select e.k kk, sum(e.v::int)::int s
+              from public.profili_titolo x, jsonb_array_elements_text(x.hist) with ordinality as e(v, k)
+             where x.gruppo = p_gruppo and x.orizzonte = k.o and x.profilo = k.p group by e.k) q) h on true;
+$$;
+revoke all on function public.studio_gruppo(text, jsonb) from public, anon, authenticated;
+grant execute on function public.studio_gruppo(text, jsonb) to service_role;
+
 -- 7) SICUREZZA A LIVELLO DI RIGA (RLS): ognuno vede solo i propri dati.
 --    Le chiavi si creano e modificano SOLO dal pannello admin (server).
 alter table public.profiles enable row level security;

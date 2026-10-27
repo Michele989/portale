@@ -55,7 +55,8 @@ function creaSb(db, ctx) {
       if (nome === "username_disponibile") return { data: !db.profiles.some((p) => p.username.toLowerCase() === args.p_username.toLowerCase()) }; return { data: null }; },
     from(tab) {
       let filtri = [], op = "select", payload, opts, ord, lim;
-      const righe = () => db[tab].filter((r) => filtri.every(([c, v]) => r[c] === v));
+      const uguale = (x, v) => (Array.isArray(v) ? v.includes(x) : x === v);
+      const righe = () => db[tab].filter((r) => filtri.every(([c, v]) => uguale(r[c], v)));
       async function exec(single) {
         if (op === "select") {
           let r = righe().map((x) => ({ ...x }));
@@ -63,7 +64,7 @@ function creaSb(db, ctx) {
           if (lim) r = r.slice(0, lim);
           return single ? { data: r[0] || null, error: null } : { data: r, error: null };
         }
-        if (op === "delete") { db[tab] = db[tab].filter((r) => !filtri.every(([c, v]) => r[c] === v)); return { error: null }; }
+        if (op === "delete") { db[tab] = db[tab].filter((r) => !filtri.every(([c, v]) => uguale(r[c], v))); return { error: null }; }
         const lista = Array.isArray(payload) ? payload : [payload];
         const uniq = CHIAVI_UNICHE[tab] || [];
         for (const nuova of lista) {
@@ -74,7 +75,7 @@ function creaSb(db, ctx) {
         return { error: null };
       }
       const api = {
-        select() { return api; }, eq(c, v) { filtri.push([c, v]); return api; }, order(c, o) { ord = [c, o]; return api; }, limit(n) { lim = n; return api; },
+        select() { return api; }, eq(c, v) { filtri.push([c, v]); return api; }, in(c, v) { filtri.push([c, v]); return api; }, order(c, o) { ord = [c, o]; return api; }, limit(n) { lim = n; return api; },
         insert(p) { op = "insert"; payload = p; return api; }, upsert(p, o) { op = "upsert"; payload = p; opts = o; return api; }, delete() { op = "delete"; return api; },
         maybeSingle() { return exec(true); }, then(a, b) { return exec(false).then(a, b); },
       };
@@ -99,6 +100,7 @@ function creaFetch(db, ctx) {
       k.usi_rimasti--;
       if (body.ticker === "ZZZZ") { k.usi_rimasti++; return J({ ok: false, codice: "TICKER_NON_TROVATO", errore: "Ticker non trovato: ZZZZ", usi_rimasti: k.usi_rimasti }, 404); }
       if (body.ticker === "LENTO" && !ctx.lentoFatto) { ctx.lentoFatto = true; k.usi_rimasti++; return J({ ok: false, codice: "LIMITE_MINUTO", errore: "x", riprova_tra: 0.05, usi_rimasti: k.usi_rimasti }, 429); }
+      if (ctx.ritardo) await new Promise((r) => setTimeout(r, ctx.ritardo));
       const bars = DATI(body.ticker);
       const an = A.analizzaSerie(bars, { tp: body.tp, sl: body.sl, comm: body.comm, spread: body.spread }, { oggi: new Date(bars[0].d + "T12:00:00Z"), mercato: ctx.mercatoGiu ? { ticker: "SPY", prezzo: 1, sma200: 2, distanza: -10, sopraSma200: false } : null });
       return J({ ok: true, ticker: body.ticker, ...an, orizzonti: O.analizzaOrizzonti(bars.slice().reverse(), { datiOk: true }), dati_del: new Date(Date.now() - 3600e3).toISOString(), usi_rimasti: k.usi_rimasti });
@@ -117,6 +119,10 @@ function creaFetch(db, ctx) {
         db.access_keys.push({ id: db.access_keys.length + 1, user_id: p.user_id, codice: "MA-TEST-TEST-TEST", stato: "attiva", usi_totali: body.usi, usi_rimasti: body.usi, scade_il: null, creata_il: new Date().toISOString(), ultimo_uso_il: null, note: body.note });
         return J({ ok: true, codice: "MA-TEST-TEST-TEST", username: p.username, usi: body.usi, giorni: body.giorni });
       }
+      if (body.azione === "verdetti") return J({ ok: true, dal: "2026-10-21", giorno: "2026-10-23", oggi: { breve: { favorevole: 5, neutro: 6, sfavorevole: 2 } }, orizzonti: [
+        { orizzonte: "breve", chiusi: 120, aperti: 39, base_positivi: 60, favorevole: { n: 120, azzeccati: 80, pct: 66.7, ic: [58, 74], rend_medio: 1 }, sfavorevole: { n: 0, azzeccati: null, pct: null, ic: null, rend_medio: null }, neutro: { n: 0 } },
+        { orizzonte: "medio", chiusi: 0, aperti: 39, base_positivi: null, favorevole: { n: 0 }, sfavorevole: { n: 0 }, neutro: { n: 0 } },
+        { orizzonte: "lungo", chiusi: 0, aperti: 39, base_positivi: null, favorevole: { n: 0 }, sfavorevole: { n: 0 }, neutro: { n: 0 } }] });
       if (body.azione === "imposta_stato") { db.access_keys.find((k) => k.id === body.chiave_id).stato = body.stato; return J({ ok: true }); }
       return J({ ok: false, errore: "?" }, 400);
     }
@@ -125,7 +131,7 @@ function creaFetch(db, ctx) {
 }
 
 // ---------- caricamento pagina ----------
-async function carica(file, { db, ctx, config = true }) {
+async function carica(file, { db, ctx, config = true, pre = null }) {
   let html = leggi(file).replace(/<script src="https:\/\/cdn[^>]*><\/script>/, "");
   let cfg = leggi("config.js").replace("INSERISCI_URL_PROGETTO_SUPABASE", config ? "https://prova.supabase.co" : "INSERISCI").replace("INSERISCI_ANON_KEY_SUPABASE", config ? "k".repeat(40) : "x").replace("PAUSA_MS: 7700", "PAUSA_MS: 0");
   html = html.replace('<script src="config.js"></script>', "<script>" + cfg + "</script>").replace('<script src="comune.js"></script>', "<script>" + leggi("comune.js") + "</script>").replace('<script src="catalogo.js"></script>', "<script>" + leggi("catalogo.js") + "</script>");
@@ -136,6 +142,7 @@ async function carica(file, { db, ctx, config = true }) {
       w.fetch = creaFetch(db, ctx);
       w.confirm = () => ctx.conferma !== false; w.prompt = () => ctx.promptRisposta ?? null;
       w.scrollTo = () => {};
+      if (pre) pre(w);
       w.errori = []; w.addEventListener("error", (e) => w.errori.push(e.message));
     },
   });
@@ -201,6 +208,22 @@ assert.match(testo(d, "boxClassifica"), /Classifica · Lungo termine/, "cambio o
 assert.match(testo(d, "risultati"), /Lungo termine \(circa 1 anno\)/);
 click(d, d.window.document.querySelector('[data-oz="breve"]')); await attendi(30);
 assert.match(testo(d, "boxClassifica"), /Breve termine/);
+// ricerca unica nella classifica (favorevoli + neutri + sfavorevoli)
+{
+  const righe = () => [...d.window.document.querySelectorAll("#boxClassifica tr[data-vai]")].map((r) => r.getAttribute("data-vai"));
+  const tutte = righe(); assert.ok(tutte.length >= 5);
+  const campo = $(d, "cercaClass"); assert.ok(campo && $(d, "btnCercaClass") && $(d, "btnAzzeraClass"), "casella e tasti di ricerca");
+  const bersaglio = tutte[0];
+  campo.value = bersaglio.slice(0, 2).toLowerCase(); campo.dispatchEvent(new d.window.Event("input")); await attendi(20);
+  const filtrate = righe(); assert.ok(filtrate.length >= 1 && filtrate.length <= tutte.length && filtrate.includes(bersaglio), "filtra per ticker (anche minuscolo)");
+  assert.ok(filtrate.every((t) => t.toLowerCase().includes(campo.value) || (d.window.MA_CATALOGO.find((x) => x[0] === t) || ["", ""])[1].toLowerCase().includes(campo.value)), "solo corrispondenze");
+  assert.equal($(d, "cercaClass"), campo, "la casella non viene ricreata (il cursore non si perde)");
+  campo.value = "qqqzzz"; invia(d, $(d, "formCercaClass")); await attendi(20);
+  assert.equal(righe().length, 0); assert.match(testo(d, "boxClassifica"), /Nessun titolo analizzato corrisponde/);
+  click(d, $(d, "btnAzzeraClass")); await attendi(20);
+  assert.deepEqual(righe(), tutte, "azzera ripristina tutte le liste");
+  assert.equal($(d, "cercaClass").value, "");
+}
 click(d, d.window.document.querySelector('[data-oz="medio"]')); await attendi(30);
 if (process.env.SNAP) { const { writeFileSync } = await import("node:fs"); writeFileSync(process.env.SNAP, "<!doctype html>" + d.window.document.documentElement.outerHTML.replace(/<script[\s\S]*?<\/script>/g, "")); }
 assert.deepEqual(d.window.errori, []);
@@ -225,23 +248,61 @@ assert.ok(db.watchlist.some((w) => w.ticker === "ZZZZ"));
 $(d, "nuovoTicker").value = "bad ticker"; invia(d, $(d, "formTicker")); await attendi(30);
 assert.match(testo(d, "msgLista"), /non valido/);
 $(d, "nuovoTicker").value = "ZZZZ"; invia(d, $(d, "formTicker")); await attendi(30);
-assert.match(testo(d, "msgLista"), /già nella lista/);
+assert.match(testo(d, "msgLista"), /già nella lista, tra: Azioni/, "dice dove si trova");
+// aggiunta di URA: il messaggio dice nome e sezione
+$(d, "nuovoTicker").value = "uranio"; $(d, "nuovoTicker").dispatchEvent(new d.window.Event("input")); await attendi(20);
+click(d, $(d, "suggerimenti").querySelector('[data-t="URA"]')); await attendi(80);
+assert.match(testo(d, "msgLista"), /URA \(Global X Uranium.*aggiunto nella sezione «ETF»/, "messaggio con nome e sezione: " + testo(d, "msgLista"));
+assert.ok(db.watchlist.some((w) => w.ticker === "URA" && w.tipo === "etf"));
 // ricerca per nome nel catalogo, suggerimenti e pacchetti
 $(d, "nuovoTicker").value = "gold"; $(d, "nuovoTicker").dispatchEvent(new d.window.Event("input"));
 await attendi(20);
 assert.ok(!$(d, "suggerimenti").classList.contains("hidden") && $(d, "suggerimenti").textContent.includes("GLD"), "suggerimenti per nome");
 click(d, $(d, "suggerimenti").querySelector('[data-t="GLD"]')); await attendi(60);
 assert.ok(db.watchlist.some((w) => w.ticker === "GLD" && w.tipo === "etf"), "GLD aggiunto dal suggerimento (era gia' presente: nessun doppione)");
+// cronologia delle ricerche
+$(d, "nuovoTicker").value = ""; $(d, "nuovoTicker").dispatchEvent(new d.window.Event("focus")); await attendi(20);
+assert.ok(!$(d, "suggerimenti").classList.contains("hidden") && $(d, "suggerimenti").querySelector('[data-cron="GLD"]'), "cronologia con GLD al clic sul campo vuoto");
+click(d, $(d, "suggerimenti").querySelector('[data-cron="GLD"]')); await attendi(20);
+assert.equal($(d, "nuovoTicker").value, "GLD", "voce della cronologia riempie il campo");
+assert.ok($(d, "suggerimenti").querySelector('[data-t="GLD"]'), "e mostra il risultato");
 $(d, "nuovoTicker").value = "Netflix"; invia(d, $(d, "formTicker")); await attendi(60);
 assert.ok(db.watchlist.some((w) => w.ticker === "NFLX" && w.tipo === "azioni"), "nome completo risolto nel ticker");
 $(d, "nuovoTicker").value = "ishares"; invia(d, $(d, "formTicker")); await attendi(30);
 assert.match(testo(d, "msgLista"), /Più risultati/, "nome ambiguo: chiede di scegliere");
+$(d, "nuovoTicker").value = ""; $(d, "nuovoTicker").dispatchEvent(new d.window.Event("click")); await attendi(20);
+assert.ok($(d, "suggerimenti").querySelector('[data-cron="NFLX"]') && $(d, "suggerimenti").querySelector('[data-cron="GLD"]'), "cronologia con NFLX e GLD");
+assert.ok($(d, "suggerimenti").innerHTML.indexOf('data-cron="NFLX"') < $(d, "suggerimenti").innerHTML.indexOf('data-cron="GLD"'), "la piu' recente per prima");
+click(d, $(d, "btnPulisciCron")); await attendi(10);
+assert.ok($(d, "suggerimenti").classList.contains("hidden"), "cronologia cancellata");
+$(d, "nuovoTicker").value = ""; $(d, "nuovoTicker").dispatchEvent(new d.window.Event("focus")); await attendi(10);
+assert.ok($(d, "suggerimenti").classList.contains("hidden"), "nessuna cronologia dopo la cancellazione");
+
 const prima2 = db.watchlist.filter((w) => w.user_id === "u2").length;
 click(d, $(d, "pacchetti").querySelector('[data-pk="etf_settori"]')); await attendi(80);
 assert.equal(db.watchlist.filter((w) => w.user_id === "u2").length, prima2 + 11, "pacchetto settori aggiunto");
+assert.match(testo(d, "msgLista"), /Pacchetto «.*» aggiunto: 11 titoli \(11 in ETF\)/, "pacchetto: nome e sezione: " + testo(d, "msgLista"));
 click(d, $(d, "pacchetti").querySelector('[data-pk="tutto"]')); await attendi(150);
 assert.ok(db.watchlist.filter((w) => w.user_id === "u2").length >= 400 && db.watchlist.filter((w) => w.user_id === "u2").length <= 500, "pacchetto TUTTO aggiunto: " + db.watchlist.filter((w) => w.user_id === "u2").length);
 assert.equal($(d, "pacchetti").querySelector('[data-pk="tutto"]').disabled, true, "tutto completo");
+// togliere pacchetti e svuotare la lista
+const nPrima = db.watchlist.filter((w) => w.user_id === "u2").length;
+const ris0 = { ...d.window.__MA_APP.S.ris };
+ctx.conferma = false; click(d, $(d, "pacchetti").querySelector('[data-tk="etf_settori"]')); await attendi(60);
+assert.equal(db.watchlist.filter((w) => w.user_id === "u2").length, nPrima, "senza conferma non toglie nulla"); ctx.conferma = true;
+click(d, $(d, "pacchetti").querySelector('[data-tk="etf_settori"]')); await attendi(80);
+assert.equal(db.watchlist.filter((w) => w.user_id === "u2").length, nPrima - 11, "pacchetto settori tolto");
+assert.ok(db.watchlist.some((w) => w.user_id === "u2" && w.ticker === "QQQ"), "gli altri titoli restano");
+assert.equal($(d, "pacchetti").querySelector('[data-tk="etf_settori"]').disabled, true, "tasto Togli disattivato se nulla da togliere");
+assert.equal($(d, "pacchetti").querySelector('[data-pk="etf_settori"]').disabled, false, "si puo' riaggiungere");
+click(d, $(d, "btnSvuota")); await attendi(100);
+assert.equal(db.watchlist.filter((w) => w.user_id === "u2").length, 0, "lista svuotata");
+assert.match(testo(d, "chips-etf"), /nessuno/);
+click(d, $(d, "pacchetti").querySelector('[data-pk="etf_base"]')); await attendi(80);
+assert.equal(db.watchlist.filter((w) => w.user_id === "u2").length, 8, "pacchetto base riaggiunto dopo lo svuotamento");
+click(d, $(d, "pacchetti").querySelector('[data-pk="tutto"]')); await attendi(150);
+d.window.__MA_APP.S.ris = ris0; click(d, d.window.document.querySelector('[data-oz="medio"]')); await attendi(30);
+assert.deepEqual(d.window.errori, []);
 assert.equal($(d, "pacchetti").querySelector('[data-pk="etf_base"]').disabled, true, "pacchetto gia' completo disattivato");
 assert.deepEqual(d.window.errori, []);
 // analisi solo del ticker sbagliato: uso rimborsato
@@ -353,6 +414,11 @@ db2.access_keys.push({ id: 2, user_id: "c3", codice: "MA-LOW1-LOW1-LOW1", stato:
 db2.access_keys.push({ id: 1, user_id: "c2", codice: "MA-OLD1-OLD1-OLD1", stato: "attiva", usi_totali: 150, usi_rimasti: 40, scade_il: null, ultimo_uso_il: "2026-10-01T10:00:00Z", note: "Base" });
 let ad = await carica("admin.html", { db: db2, ctx: ctx2 });
 await finche(() => !$(ad, "pannello").classList.contains("hidden"), "pannello admin");
+await finche(() => ad.window.document.querySelectorAll("#tabVerdetti .verd-card").length === 3, "schede affidabilita verdetti");
+assert.match(testo(ad, "tabVerdetti"), /Verdetti di oggi \(2026-10-23\): 5 favorevoli · 6 neutri · 2 sfavorevoli/);
+assert.match(testo(ad, "tabVerdetti"), /Casi chiusi\s*120/); assert.match(testo(ad, "tabVerdetti"), /67% su 120/);
+assert.match(testo(ad, "tabVerdetti"), /nessuno ancora/, "orizzonti senza dati");
+assert.match(testo(ad, "msgVerdetti"), /Registro attivo dal 2026-10-21/);
 assert.equal(ad.window.document.querySelectorAll("#tabella tbody tr").length, 4);
 assert.match(testo(ad, "stats"), /In esaurimento[^0-9]*1/); assert.match(testo(ad, "stats"), /avvisi email attivi\s*2/); assert.match(testo(ad, "stats"), /inviate \(7 giorni\)\s*5/);
 $(ad, "filtro").value = "esaurimento"; $(ad, "filtro").dispatchEvent(new ad.window.Event("change"));
@@ -426,4 +492,42 @@ for (const ic of man.icons) assert.ok(existsSync(P + ic.src), "icona mancante " 
 new Function(leggi("sw.js").replace(/self\./g, "globalThis.")); // sintassi valida
 assert.match(leggi("index.html"), /rel="manifest"/);
 assert.match(testo(await carica("index.html", { db: nuovoDb(), ctx: { utenti: [], chiamate: [], session: null } }), "vistaAuth"), /Password dimenticata/);
+// =============== 6) admin: catalogo completo in lista (una volta sola) ===============
+{
+  const dbA = nuovoDb(), ctxA = { utenti: [{ id: "adm", email: "a@x.it", password: "p" }], chiamate: [], session: { access_token: "tok-adm", user: { id: "adm", email: "a@x.it" } } };
+  dbA.admins.push({ user_id: "adm" });
+  dbA.profiles.push({ user_id: "adm", username: "boss", email: "a@x.it", created_at: "2026-01-01T00:00:00Z" });
+  const dA = await carica("index.html", { db: dbA, ctx: ctxA });
+  await finche(() => dbA.watchlist.filter((w) => w.user_id === "adm").length >= 420, "catalogo completo aggiunto all'admin");
+  assert.equal(new Set(dbA.watchlist.map((w) => w.ticker)).size, dbA.watchlist.length, "nessun duplicato");
+  assert.ok(dbA.watchlist.some((w) => w.ticker === "URA" && w.tipo === "etf"), "URA presente");
+  assert.deepEqual(dA.window.errori, []);
+  // dopo aver tolto un titolo, al ricaricamento non viene rimesso
+  dbA.watchlist = dbA.watchlist.filter((w) => w.ticker !== "URA");
+  const dB = await carica("index.html", { db: dbA, ctx: ctxA, pre: (w) => w.localStorage.setItem("ma_cat_completo_adm", "1") });
+  await attendi(300);
+  assert.ok(!dbA.watchlist.some((w) => w.ticker === "URA"), "scelta dell'admin rispettata");
+}
+
+// =============== 7) tasto "Ferma l'analisi" ===============
+{
+  const dbF = nuovoDb(), ctxF = { utenti: [{ id: "uf", email: "f@x.it", password: "p" }], chiamate: [], ritardo: 60, session: { access_token: "tok-uf", user: { id: "uf", email: "f@x.it" } } };
+  dbF.profiles.push({ user_id: "uf", username: "fermo", email: "f@x.it", created_at: "2026-01-01T00:00:00Z" });
+  dbF.access_keys.push({ id: 1, user_id: "uf", codice: "MA-FFFF-FFFF-FFFF", stato: "attiva", usi_totali: 100, usi_rimasti: 100, scade_il: null });
+  const dF = await carica("index.html", { db: dbF, ctx: ctxF });
+  await finche(() => dbF.watchlist.length === 13 && !$(dF, "btnAnalizzaTutto").disabled, "lista pronta");
+  assert.ok($(dF, "btnFerma").classList.contains("hidden"), "tasto Ferma nascosto a riposo");
+  click(dF, $(dF, "btnAnalizzaTutto"));
+  await finche(() => /Analisi [2-9]\/13/.test($(dF, "progresso").textContent), "analisi partita");
+  assert.ok(!$(dF, "btnFerma").classList.contains("hidden"), "tasto Ferma visibile durante l'analisi");
+  click(dF, $(dF, "btnFerma"));
+  await finche(() => /fermata da te/.test($(dF, "progresso").textContent), "analisi fermata", 8000);
+  const fatte = ctxF.chiamate.filter((c) => c.url.endsWith("/analizza")).length;
+  assert.ok(fatte >= 2 && fatte < 13, "si ferma a meta': " + fatte);
+  assert.equal(dbF.access_keys[0].usi_rimasti, 100 - fatte, "consumati solo gli usi delle analisi fatte");
+  assert.ok($(dF, "btnFerma").classList.contains("hidden"), "tasto nascosto dopo lo stop");
+  assert.equal($(dF, "btnAnalizzaTutto").disabled, false, "si puo' ripartire");
+  assert.deepEqual(dF.window.errori, []);
+}
+
 console.log("test_frontend OK");

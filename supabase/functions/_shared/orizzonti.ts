@@ -32,6 +32,13 @@ export interface StatRendimenti {
   migliore: number | null;
 }
 
+// Studio di GRUPPO: stesso profilo di oggi, osservato su tutti i titoli del catalogo della stessa categoria.
+export interface DatiGruppo { titoli: number; n: number; indip: number; pos: number; hist: number[] }
+export interface StatGruppo {
+  nome: string; titoli: number; n: number; indipendenti: number;
+  pPositivi: number | null; mediana: number | null; p10: number | null; p90: number | null;
+}
+
 export interface Ventaglio {
   giorni: number;
   passi: number[]; // giorni di borsa da oggi (0 = oggi)
@@ -54,6 +61,8 @@ export interface StudioOrizzonte {
   verdetto: Verdetto;
   affidabilita: Affidabilita;
   storico: { tutti: StatRendimenti; simili: StatRendimenti | null; usato: "simili" | "tutti"; profilo: string };
+  gruppo: StatGruppo | null; // stesso profilo, tutto il gruppo di titoli simili
+  confermaGruppo: boolean | null; // null = campione di gruppo troppo piccolo
   ventaglio: Ventaglio | null;
   motivi: string[];
 }
@@ -122,6 +131,94 @@ function livello(indipendenti: number): Affidabilita {
   return "alta";
 }
 
+// ------------------------------------------------------------------ istogramma dei rendimenti (per i dati di gruppo)
+// 152 classi: sotto -50%, poi 150 classi da 1% fino a +100%, sopra +100%.
+export const HIST_LEN = 152;
+export function indiceHist(ret: number): number {
+  if (ret <= -0.5) return 0;
+  if (ret >= 1) return HIST_LEN - 1;
+  return 1 + Math.floor((ret + 0.5) / 0.01 + 1e-9);
+}
+function quantileHist(hist: number[], totale: number, q: number): number {
+  const soglia = totale * q;
+  let acc = 0;
+  for (let k = 0; k < hist.length; k++) {
+    acc += hist[k];
+    if (acc >= soglia && hist[k] > 0) {
+      if (k === 0) return -0.5;
+      if (k === hist.length - 1) return 1;
+      return -0.5 + (k - 1) * 0.01 + 0.005; // centro della classe
+    }
+  }
+  return 0;
+}
+export function statGruppo(nome: string, g: DatiGruppo | null): StatGruppo | null {
+  if (!g || !g.n || g.hist.length !== HIST_LEN) return null;
+  return {
+    nome, titoli: g.titoli, n: g.n, indipendenti: g.indip,
+    pPositivi: (g.pos / g.n) * 100,
+    mediana: quantileHist(g.hist, g.n, 0.5) * 100, p10: quantileHist(g.hist, g.n, 0.1) * 100, p90: quantileHist(g.hist, g.n, 0.9) * 100,
+  };
+}
+
+// ------------------------------------------------------------------ profilo "simile a oggi"
+function costruisciChiave(c: number[], rsi: (number | null)[], sma50: (number | null)[], sma200: (number | null)[]) {
+  return (nome: NomeOrizzonte, i: number): number | null => {
+    if (nome === "breve") {
+      if (rsi[i] === null || sma50[i] === null) return null;
+      const b = (rsi[i] as number) < 35 ? 0 : (rsi[i] as number) > 65 ? 2 : 1;
+      return b * 2 + (c[i] > (sma50[i] as number) ? 1 : 0);
+    }
+    if (nome === "medio") {
+      if (sma50[i] === null || sma200[i] === null) return null;
+      const a = c[i] > (sma50[i] as number), b = (sma50[i] as number) > (sma200[i] as number);
+      return a && b ? 2 : !a && !b ? 0 : 1;
+    }
+    if (sma200[i] === null || i < 252) return null;
+    const a = c[i] > (sma200[i] as number), b = c[i] / c[i - 252] - 1 > 0;
+    return a && b ? 2 : !a && !b ? 0 : 1;
+  };
+}
+function contestoProfili(cron: Barra[]) {
+  const c = cron.map((x) => x.c);
+  const sma50 = seriesMedia(c, 50), sma200 = seriesMedia(c, 200);
+  const rsi = c.map((_, i) => rsiA(c, i, 14));
+  return { c, chiave: costruisciChiave(c, rsi, sma50, sma200) };
+}
+
+// Chiave del profilo di OGGI per ogni orizzonte (serve a chiedere i dati di gruppo giusti).
+export function profiliOggi(cron: Barra[]): Record<NomeOrizzonte, number | null> {
+  const { c, chiave } = contestoProfili(cron);
+  const u = c.length - 1;
+  return { breve: chiave("breve", u), medio: chiave("medio", u), lungo: chiave("lungo", u) };
+}
+
+export interface ContributoProfilo { orizzonte: NomeOrizzonte; profilo: number; n: number; indip: number; pos: number; hist: number[] }
+
+// Contributo di UN titolo ai dati di gruppo: per ogni orizzonte e profilo, quanti casi storici,
+// quanti periodi indipendenti, quanti positivi e la distribuzione dei rendimenti.
+export function contributoProfili(cron: Barra[]): ContributoProfilo[] {
+  const { c, chiave } = contestoProfili(cron);
+  const ultimo = c.length - 1;
+  const out: ContributoProfilo[] = [];
+  for (const nome of Object.keys(ORIZZONTI) as NomeOrizzonte[]) {
+    const h = ORIZZONTI[nome].giorni;
+    const mappa = new Map<number, ContributoProfilo & { ultimo: number }>();
+    for (let i = 1; i + h <= ultimo; i++) {
+      const k = chiave(nome, i);
+      if (k === null) continue;
+      let r = mappa.get(k);
+      if (!r) { r = { orizzonte: nome, profilo: k, n: 0, indip: 0, pos: 0, hist: new Array(HIST_LEN).fill(0), ultimo: -Infinity }; mappa.set(k, r); }
+      const ret = c[i + h] / c[i] - 1;
+      r.n++; if (ret > 0) r.pos++;
+      r.hist[indiceHist(ret)]++;
+      if (i - r.ultimo >= h) { r.indip++; r.ultimo = i; }
+    }
+    for (const r of mappa.values()) { const { ultimo: _u, ...pulito } = r; out.push(pulito); }
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------ ventaglio simulato
 export function ventaglio(c: number[], h: number, prove = 1000, blocco = 5, storico = 756): Ventaglio | null {
   const n = c.length;
@@ -174,7 +271,14 @@ export function ventaglio(c: number[], h: number, prove = 1000, blocco = 5, stor
 
 // ------------------------------------------------------------------ studio completo
 // cron: barre in ordine CRONOLOGICO (dalla piu' vecchia alla piu' recente).
-export function analizzaOrizzonti(cron: Barra[], opz: { datiOk?: boolean } = {}): Record<NomeOrizzonte, StudioOrizzonte> {
+export interface OpzioniOrizzonti {
+  datiOk?: boolean;
+  senzaVentaglio?: boolean; // risparmia calcolo quando serve solo il verdetto (registro notturno)
+  gruppo?: Partial<Record<NomeOrizzonte, DatiGruppo | null>>; // dati di gruppo per il profilo di oggi
+  nomeGruppo?: string;
+}
+
+export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Record<NomeOrizzonte, StudioOrizzonte> {
   const c = cron.map((x) => x.c);
   const n = c.length, ultimo = n - 1;
   const datiOk = opz.datiOk !== false;
@@ -214,21 +318,7 @@ export function analizzaOrizzonti(cron: Barra[], opz: { datiOk?: boolean } = {})
   };
 
   // profilo "simile a oggi" per ogni orizzonte (stessa configurazione degli indicatori)
-  const chiave = (nome: NomeOrizzonte, i: number): number | null => {
-    if (nome === "breve") {
-      if (rsi[i] === null || sma50[i] === null) return null;
-      const b = (rsi[i] as number) < 35 ? 0 : (rsi[i] as number) > 65 ? 2 : 1;
-      return b * 2 + (c[i] > (sma50[i] as number) ? 1 : 0);
-    }
-    if (nome === "medio") {
-      if (sma50[i] === null || sma200[i] === null) return null;
-      const a = c[i] > (sma50[i] as number), b = (sma50[i] as number) > (sma200[i] as number);
-      return a && b ? 2 : !a && !b ? 0 : 1;
-    }
-    if (sma200[i] === null || i < 252) return null;
-    const a = c[i] > (sma200[i] as number), b = c[i] / c[i - 252] - 1 > 0;
-    return a && b ? 2 : !a && !b ? 0 : 1;
-  };
+  const chiave = costruisciChiave(c, rsi, sma50, sma200);
   const descrizioneProfilo = (nome: NomeOrizzonte, k: number | null): string => {
     if (k === null) return "profilo non calcolabile";
     if (nome === "breve") return ["RSI basso (<35)", "RSI medio (35-65)", "RSI alto (>65)"][Math.floor(k / 2)] + (k % 2 ? ", prezzo sopra la media a 50 giorni" : ", prezzo sotto la media a 50 giorni");
@@ -257,7 +347,16 @@ export function analizzaOrizzonti(cron: Barra[], opz: { datiOk?: boolean } = {})
     const usaSimili = !!simili && simili.indipendenti >= 8;
     const stat = usaSimili ? (simili as StatRendimenti) : tutti;
 
+    // dati di gruppo: stesso profilo osservato su molti titoli simili
+    const gr = statGruppo(opz.nomeGruppo || "gruppo", (opz.gruppo && opz.gruppo[nome]) || null);
+    const grUtile = !!gr && gr.titoli >= 10 && gr.indipendenti >= 30;
+    const conferma: boolean | null = grUtile ? ((gr as StatGruppo).pPositivi as number) >= 52 && ((gr as StatGruppo).mediana as number) > 0 : null;
+
     let affid = livello(stat.indipendenti);
+    if (affid !== "insufficiente" && affid !== "alta" && !!gr && gr.titoli >= 30 && gr.indipendenti >= 100 && datiOk) {
+      affid = affid === "bassa" ? "media" : "alta";
+      motivi.push("precisione rafforzata dal campione di gruppo (" + gr.titoli + " titoli simili)");
+    }
     if (!datiOk && affid !== "insufficiente") { affid = "bassa"; motivi.push("dati con anomalie"); }
     if (!usaSimili && tutti.indipendenti > 0) motivi.push("pochi casi simili a oggi: uso tutto lo storico");
     if (stat.indipendenti < 8) motivi.push("solo " + stat.indipendenti + " periodi indipendenti nello storico");
@@ -268,11 +367,16 @@ export function analizzaOrizzonti(cron: Barra[], opz: { datiOk?: boolean } = {})
     else if (punteggio >= 3 && (stat.pPositivi as number) >= 55 && (stat.mediana as number) > 0) verdetto = "favorevole";
     else if ((punteggio <= 1 && !((stat.pPositivi as number) >= 55 && (stat.mediana as number) > 0)) || ((stat.mediana as number) < 0 && (stat.pPositivi as number) < 45)) verdetto = "sfavorevole";
     else verdetto = "neutro";
+    if (verdetto === "favorevole" && conferma === false) {
+      verdetto = "neutro";
+      motivi.push("il gruppo di titoli simili non conferma (salito solo nel " + Math.round((gr as StatGruppo).pPositivi as number) + "% dei casi)");
+    }
 
     risultato[nome] = {
       nome, etichetta, giorni: h, punteggio, criteri: cr, verdetto, affidabilita: affid,
       storico: { tutti, simili, usato: usaSimili ? "simili" : "tutti", profilo: descrizioneProfilo(nome, kOra) },
-      ventaglio: ventaglio(c, h),
+      gruppo: gr, confermaGruppo: conferma,
+      ventaglio: opz.senzaVentaglio ? null : ventaglio(c, h),
       motivi,
     };
   }
