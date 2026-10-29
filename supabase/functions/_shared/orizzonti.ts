@@ -30,6 +30,8 @@ export interface StatRendimenti {
   p90: number | null;
   peggiore: number | null;
   migliore: number | null;
+  pct?: number[]; // 101 percentili (0..100) del rendimento a fine periodo, in %
+  pctMax?: number[]; // 101 percentili del massimo rendimento toccato durante il periodo, in %
 }
 
 // Studio di GRUPPO: stesso profilo di oggi, osservato su tutti i titoli del catalogo della stessa categoria.
@@ -37,6 +39,7 @@ export interface DatiGruppo { titoli: number; n: number; indip: number; pos: num
 export interface StatGruppo {
   nome: string; titoli: number; n: number; indipendenti: number;
   pPositivi: number | null; mediana: number | null; p10: number | null; p90: number | null;
+  pct?: number[]; // 101 percentili del rendimento a fine periodo, in %
 }
 
 export interface Ventaglio {
@@ -110,7 +113,9 @@ function seriesMedia(c: number[], p: number): (number | null)[] {
   return out;
 }
 
-function statistiche(rendimenti: number[], indici: number[], h: number): StatRendimenti {
+const tabellaPercentili = (ord: number[]): number[] => Array.from({ length: 101 }, (_, k) => Math.round(quantile(ord, k / 100) * 1000) / 10);
+
+function statistiche(rendimenti: number[], indici: number[], h: number, massimi?: number[]): StatRendimenti {
   const n = rendimenti.length;
   if (!n) return { n: 0, indipendenti: 0, pPositivi: null, mediana: null, p10: null, p90: null, peggiore: null, migliore: null };
   let indip = 0, ultimo = -Infinity;
@@ -121,6 +126,7 @@ function statistiche(rendimenti: number[], indici: number[], h: number): StatRen
     pPositivi: (rendimenti.filter((x) => x > 0).length / n) * 100,
     mediana: quantile(ord, 0.5) * 100, p10: quantile(ord, 0.1) * 100, p90: quantile(ord, 0.9) * 100,
     peggiore: ord[0] * 100, migliore: ord[n - 1] * 100,
+    ...(massimi ? { pct: tabellaPercentili(ord), pctMax: tabellaPercentili(massimi.slice().sort((a, b) => a - b)) } : {}),
   };
 }
 
@@ -158,6 +164,7 @@ export function statGruppo(nome: string, g: DatiGruppo | null): StatGruppo | nul
     nome, titoli: g.titoli, n: g.n, indipendenti: g.indip,
     pPositivi: (g.pos / g.n) * 100,
     mediana: quantileHist(g.hist, g.n, 0.5) * 100, p10: quantileHist(g.hist, g.n, 0.1) * 100, p90: quantileHist(g.hist, g.n, 0.9) * 100,
+    pct: Array.from({ length: 101 }, (_, k) => Math.round(quantileHist(g.hist, g.n, k / 100) * 1000) / 10),
   };
 }
 
@@ -336,14 +343,18 @@ export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Re
     // finestre storiche: ogni giorno i con i+h disponibile
     const rTutti: number[] = [], iTutti: number[] = [];
     const rSimili: number[] = [], iSimili: number[] = [];
+    const mTutti: number[] = [], mSimili: number[] = [];
+    const conMax = !opz.senzaVentaglio;
     const kOra = chiave(nome, ultimo);
     for (let i = 1; i + h <= ultimo; i++) {
       const ret = c[i + h] / c[i] - 1;
       rTutti.push(ret); iTutti.push(i);
-      if (kOra !== null && chiave(nome, i) === kOra) { rSimili.push(ret); iSimili.push(i); }
+      let mx = 0;
+      if (conMax) { let m = -Infinity; for (let j = i + 1; j <= i + h; j++) if (c[j] > m) m = c[j]; mx = m / c[i] - 1; mTutti.push(mx); }
+      if (kOra !== null && chiave(nome, i) === kOra) { rSimili.push(ret); iSimili.push(i); if (conMax) mSimili.push(mx); }
     }
-    const tutti = statistiche(rTutti, iTutti, h);
-    const simili = kOra !== null && rSimili.length ? statistiche(rSimili, iSimili, h) : null;
+    const tutti = statistiche(rTutti, iTutti, h, conMax ? mTutti : undefined);
+    const simili = kOra !== null && rSimili.length ? statistiche(rSimili, iSimili, h, conMax ? mSimili : undefined) : null;
     const usaSimili = !!simili && simili.indipendenti >= 8;
     const stat = usaSimili ? (simili as StatRendimenti) : tutti;
 

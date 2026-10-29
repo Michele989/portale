@@ -8,8 +8,9 @@
 <script src="tema.js"></script>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#f5f6fa">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon.svg?v=3" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png?v=3" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png?v=3">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
 <script src="comune.js"></script>
@@ -88,6 +89,7 @@
       <h2>Il tuo orizzonte di investimento</h2>
       <div class="orizzonte-btns" id="orizzonteBtns"></div>
       <div class="muted" id="orizzonteDesc" style="margin-top:8px"></div>
+      <div id="sogliaBox" style="margin-top:14px"></div>
     </section>
     <section>
       <h2>La mia lista</h2>
@@ -228,6 +230,8 @@
     wl: [], pf: [], ris: {}, err: {}, ultimaData: null,
     inCorso: false, orizzonte: "medio"
   };
+  S.soglia = 10;
+  try { var sg0 = Number(localStorage.getItem("ma_soglia")); if (sg0 >= 1 && sg0 <= 100) S.soglia = sg0; } catch (e) { /* ignora */ }
   try { var ozSalvato = localStorage.getItem("ma_orizzonte"); if (ozSalvato === "breve" || ozSalvato === "medio" || ozSalvato === "lungo") S.orizzonte = ozSalvato; } catch (e) { /* ignora */ }
 
   function show(id, on) { $(id).classList.toggle("hidden", !on); }
@@ -684,6 +688,45 @@
     var z = 1.96, p = k / n, den = 1 + z * z / n, c = (p + z * z / (2 * n)) / den, m = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den;
     return { low: Math.max(0, c - m) * 100, high: Math.min(1, c + m) * 100 };
   }
+  // probabilita' storica che il rendimento sia almeno x% (101 percentili, risoluzione 1% dei casi)
+  function probOltre(pct, x) {
+    if (!pct || pct.length !== 101) return null;
+    if (x <= pct[0]) return 100;
+    if (x > pct[100]) return 0;
+    for (var k = 0; k < 100; k++) {
+      if (pct[k + 1] >= x) { var a = pct[k], b = pct[k + 1]; return 100 - (k + (b === a ? 0 : (x - a) / (b - a))); }
+    }
+    return 0;
+  }
+  // probabilita' storica che il rendimento sia sceso almeno di x% (il rischio, speculare al rialzo)
+  function probSotto(pct, x) {
+    if (!pct || pct.length !== 101) return null;
+    var t = -x;
+    if (t < pct[0]) return 0;
+    if (t >= pct[100]) return 100;
+    for (var k = 0; k < 100; k++) {
+      if (pct[k + 1] >= t) { var a = pct[k], b = pct[k + 1]; return k + (b === a ? 0 : (t - a) / (b - a)); }
+    }
+    return 100;
+  }
+  function probTxt(p) { return p === null ? "n/d" : p < 1 ? "meno dell'1%" : p > 99 ? "oltre il 99%" : Math.round(p) + "%"; }
+  function ribStat(u) { return u && u.pct ? probSotto(u.pct, S.soglia) : null; }
+  function probStat(u) { return u && u.pct ? probOltre(u.pct, S.soglia) : null; }
+  function renderSoglia() {
+    var preset = [5, 10, 20, 30, 50];
+    $("sogliaBox").innerHTML = '<label for="sogliaNum" style="margin-top:0"><b>Rialzo che ti interessa</b> (il servizio calcola in quanti casi, in passato, il prezzo è salito almeno di quanto scegli entro l\'orizzonte)</label>' +
+      '<div class="filtri"><div class="gruppo">' + preset.map(function (x) { return '<button type="button" class="pill' + (S.soglia === x ? " on" : "") + '" data-soglia="' + x + '" aria-pressed="' + (S.soglia === x) + '">+' + x + "%</button>"; }).join("") +
+      '<span class="muted">oppure</span><input id="sogliaNum" type="number" min="1" max="100" step="1" value="' + S.soglia + '" style="width:90px;margin:0" aria-label="Rialzo in percentuale"><span class="muted">%</span></div></div>';
+    var applica = function (v) {
+      v = Math.round(Number(v));
+      if (!(v >= 1 && v <= 100)) return;
+      S.soglia = v;
+      try { localStorage.setItem("ma_soglia", String(v)); } catch (e) { /* ignora */ }
+      renderRisultati();
+    };
+    document.querySelectorAll("[data-soglia]").forEach(function (b) { b.onclick = function () { applica(b.getAttribute("data-soglia")); renderSoglia(); }; });
+    $("sogliaNum").onchange = function () { applica(this.value); renderSoglia(); };
+  }
   function btRilevante(a) { return a.stato === "ipervenduto" ? a.backtestRib : a.backtest; }
   function dettagli(a) {
     var bt = btRilevante(a);
@@ -765,6 +808,7 @@
       return '<button type="button" data-oz="' + k + '" class="' + (S.orizzonte === k ? "on" : "sec") + '">' + ORIZ[k].nome + " · " + ORIZ[k].sub + "</button>";
     }).join("");
     $("orizzonteDesc").textContent = ORIZ[S.orizzonte].desc;
+    renderSoglia();
     document.querySelectorAll("[data-oz]").forEach(function (b) {
       b.onclick = function () {
         S.orizzonte = b.getAttribute("data-oz");
@@ -804,6 +848,17 @@
         "variazione mediana " + sg(u.mediana, 1) + "%; nell'80% dei casi tra " + sg(u.p10, 1) + "% e " + sg(u.p90, 1) + "%; peggior caso " + sg(u.peggiore, 0) + "%, migliore " + sg(u.migliore, 0) + "%. " +
         "Periodi indipendenti: " + u.indipendenti + ".</div>";
     }
+    if (u && u.pct) {
+      var pS = probOltre(u.pct, S.soglia), pM = u.pctMax ? probOltre(u.pctMax, S.soglia) : null, ww = pS === null ? null : wilson(Math.round(pS / 100 * u.indipendenti), u.indipendenti);
+      var gp = o.gruppo && o.gruppo.pct ? probOltre(o.gruppo.pct, S.soglia) : null;
+      h += '<div style="margin-top:6px"><b>Rialzo di almeno +' + S.soglia + '%</b>: in passato, ' + (o.storico.usato === "simili" ? "in situazioni simili a oggi" : "su qualsiasi giorno dello storico") + ", dopo " + o.giorni + " giorni di borsa il prezzo era salito di almeno il " + S.soglia + "% nel <b>" + probTxt(pS) + "</b> dei casi" +
+        (ww && u.indipendenti >= 8 ? " (margine di errore 95%: dal " + fmt(ww.low, 0) + "% al " + fmt(ww.high, 0) + "%, su " + u.indipendenti + " periodi indipendenti)" : ' (<span class="err">solo ' + u.indipendenti + " periodi indipendenti: numero poco affidabile, non fidarti</span>)") + ". " +
+        (gp !== null ? "Nel gruppo «" + esc(o.gruppo.nome) + "» " + probTxt(gp) + ". " : "") +
+        "<b>Il rovescio della medaglia:</b> negli stessi casi il prezzo era sceso di almeno il " + S.soglia + "% nel <b>" + probTxt(ribStat(u)) + "</b>. " + (pS !== null && ribStat(u) !== null && ribStat(u) > pS ? '<span class="err">Il rischio di perdere questa cifra è maggiore della possibilità di guadagnarla.</span> ' : "") +
+        (pM !== null ? '<span class="muted">Se conti anche chi ha toccato +' + S.soglia + "% in un momento qualsiasi del periodo (anche se poi è sceso): " + probTxt(pM) + ".</span> " : "") +
+        '<span class="muted">Attenzione: il catalogo contiene titoli che esistono oggi, mancano quelli falliti o usciti dal mercato, quindi le percentuali tendono a essere un po\' ottimistiche. Non è una promessa.</span></div>';
+      h += '<div style="margin-top:6px"><b>Scala delle probabilità</b> (dopo ' + o.giorni + " giorni di borsa, in passato): " + [90, 75, 50, 25, 10].map(function (p) { return "nel " + p + "% dei casi almeno " + sg(u.pct[100 - p], 1) + "%"; }).join(" · ") + ".</div>";
+    }
     var gr = o.gruppo;
     if (gr && gr.n) {
       h += '<div style="margin-top:6px"><b>Confronto con il gruppo «' + esc(gr.nome) + '»</b> (' + gr.titoli + " titoli del catalogo nella stessa situazione di oggi, circa " + gr.indipendenti + " periodi indipendenti): " +
@@ -827,21 +882,22 @@
   }
 
   function righeClassifica(ts) {
-    return '<table class="classifica"><thead><tr><th>Titolo</th><th>Punt.</th><th>Salito in passato</th><th>Mediana</th><th>80% dei casi</th><th>Affid.</th></tr></thead><tbody>' +
+    return '<table class="classifica"><thead><tr><th>Titolo</th><th>Punt.</th><th>Salito in passato</th><th>Mediana</th><th>80% dei casi</th><th>▲ rialzo / ▼ calo di almeno '+ S.soglia +'%</th><th>Affid.</th></tr></thead><tbody>' +
       ts.map(function (t) {
         var o = oz(S.ris[t]), u = statUsata(o);
         return '<tr data-vai="' + esc(t) + '"><td><b>' + esc(t) + '</b><div class="muted">' + esc(NOMI[t] || "") + "</div></td><td>" + o.punteggio + "/4</td><td>" + (u.n ? fmt(u.pPositivi, 0) + "%" : "n/d") + "</td><td>" + (u.n ? sg(u.mediana, 1) + "%" : "n/d") + "</td><td style=\"white-space:nowrap\">" +
-          (u.n ? sg(u.p10, 0) + "% / " + sg(u.p90, 0) + "%" : "n/d") + '</td><td><span class="tag aff-' + esc(o.affidabilita) + '">' + esc(o.affidabilita) + "</span></td></tr>";
+          (u.n ? sg(u.p10, 0) + "% / " + sg(u.p90, 0) + "%" : "n/d") + "</td><td>" + (probStat(u) === null ? "n/d" : '<span class="ok">▲ ' + probTxt(probStat(u)) + '</span><div class="muted">▼ ' + probTxt(ribStat(u)) + "</div>") + '</td><td><span class="tag aff-' + esc(o.affidabilita) + '">' + esc(o.affidabilita) + "</span></td></tr>";
       }).join("") + "</tbody></table>";
   }
 
   S.filtroClass = "";
-  S.fil = { cat: "", ver: "", aff: 0, pt: 0, ord: "" };
+  S.fil = { cat: "", ver: "", aff: 0, pt: 0, pr: 0, ord: "" };
+  var FIL_PR = [[0, "Tutte"], [10, "≥ 10%"], [25, "≥ 25%"], [50, "≥ 50%"]];
   var FIL_CAT = [["", "Tutte"], ["etf", "ETF"], ["crescita", "Crescita"], ["azioni", "Azioni"]];
   var FIL_VER = [["", "Tutti"], ["favorevole", "Favorevoli"], ["neutro", "Neutri"], ["sfavorevole", "Sfavorevoli"]];
   var FIL_AFF = [[0, "Tutte"], [1, "Almeno bassa"], [2, "Almeno media"], [3, "Solo alta"]];
   var FIL_PT = [[0, "Tutti"], [2, "2+"], [3, "3+"], [4, "4/4"]];
-  var FIL_ORD = [["", "Migliori prima (predefinito)"], ["pos", "% salito in passato"], ["med", "Mediana"], ["pt", "Criteri soddisfatti"], ["nome", "Nome A-Z"]];
+  var FIL_ORD = [["", "Migliori prima (predefinito)"], ["pos", "% salito in passato"], ["med", "Mediana"], ["pt", "Criteri soddisfatti"], ["prob", "Probabilità del rialzo scelto"], ["nome", "Nome A-Z"]];
   function pillole(chiave, lista) {
     return lista.map(function (x) { return '<button type="button" class="pill' + (String(S.fil[chiave]) === String(x[0]) ? " on" : "") + '" data-f="' + chiave + '" data-v="' + x[0] + '" aria-pressed="' + (String(S.fil[chiave]) === String(x[0])) + '">' + x[1] + "</button>"; }).join("");
   }
@@ -851,12 +907,14 @@
     if (f.cat && tipoDi(t) !== f.cat) return false;
     if (f.aff && (ORD[o.affidabilita] || 0) < f.aff) return false;
     if (f.pt && o.punteggio < f.pt) return false;
+    if (f.pr && (probStat(statUsata(o)) || 0) < f.pr) return false;
     return true;
   }
   function comparatore(verso) {
     var f = S.fil.ord;
     var base = f === "pos" ? function (a, b) { return (statUsata(oz(S.ris[b])).pPositivi || 0) - (statUsata(oz(S.ris[a])).pPositivi || 0); }
       : f === "med" ? function (a, b) { return (statUsata(oz(S.ris[b])).mediana || 0) - (statUsata(oz(S.ris[a])).mediana || 0); }
+      : f === "prob" ? function (a, b) { return (probStat(statUsata(oz(S.ris[b]))) || 0) - (probStat(statUsata(oz(S.ris[a]))) || 0); }
       : f === "pt" ? function (a, b) { return oz(S.ris[b]).punteggio - oz(S.ris[a]).punteggio; }
       : f === "nome" ? function (a, b) { return a < b ? -1 : a > b ? 1 : 0; }
       : null;
@@ -869,7 +927,7 @@
     if (!tickers.length) { box.innerHTML = ""; box.removeAttribute("data-ok"); return; }
     var g = { favorevole: [], neutro: [], sfavorevole: [], non_valutabile: [] }, senza = 0;
     tickers.forEach(function (t) { var o = oz(S.ris[t]); if (!o) senza++; else g[o.verdetto].push(t); });
-    var daFiltrare = !!(S.fil.cat || S.fil.ver || S.fil.aff || S.fil.pt);
+    var daFiltrare = !!(S.fil.cat || S.fil.ver || S.fil.aff || S.fil.pt || S.fil.pr);
     ["favorevole", "neutro", "sfavorevole"].forEach(function (k) { g[k] = g[k].filter(passaFiltri); });
     if (S.fil.ver) ["favorevole", "neutro", "sfavorevole"].forEach(function (k) { if (k !== S.fil.ver) g[k] = []; });
     g.favorevole.sort(comparatore("su"));
@@ -914,11 +972,11 @@
       var applica = function () { S.filtroClass = $("cercaClass").value; renderClassifica(); };
       $("cercaClass").oninput = applica;
       $("formCercaClass").onsubmit = function (e) { e.preventDefault(); applica(); };
-      $("btnAzzeraClass").onclick = function () { $("cercaClass").value = ""; S.fil = { cat: "", ver: "", aff: 0, pt: 0, ord: "" }; applica(); };
+      $("btnAzzeraClass").onclick = function () { $("cercaClass").value = ""; S.fil = { cat: "", ver: "", aff: 0, pt: 0, pr: 0, ord: "" }; applica(); };
       $("classFiltri").addEventListener("click", function (e) {
         var b = e.target.closest ? e.target.closest("[data-f]") : null; if (!b) return;
         var k = b.getAttribute("data-f"), v = b.getAttribute("data-v");
-        S.fil[k] = (k === "aff" || k === "pt") ? Number(v) : v; renderClassifica();
+        S.fil[k] = (k === "aff" || k === "pt" || k === "pr") ? Number(v) : v; renderClassifica();
       });
       $("classFiltri").addEventListener("change", function (e) { if (e.target.id === "filOrd") { S.fil.ord = e.target.value; renderClassifica(); } });
     }
@@ -928,6 +986,7 @@
       '<div class="gruppo"><b>Verdetto</b>' + pillole("ver", FIL_VER) + "</div>" +
       '<div class="gruppo"><b>Affidabilità</b>' + pillole("aff", FIL_AFF) + "</div>" +
       '<div class="gruppo"><b>Criteri</b>' + pillole("pt", FIL_PT) + "</div>" +
+      '<div class="gruppo"><b>Prob. +' + S.soglia + '%</b>' + pillole("pr", FIL_PR) + "</div>" +
       '<div class="gruppo"><b>Ordina per</b><label for="filOrd" style="position:absolute;left:-9999px">Ordina per</label><select id="filOrd">' +
         FIL_ORD.map(function (x) { return '<option value="' + x[0] + '"' + (S.fil.ord === x[0] ? " selected" : "") + ">" + x[1] + "</option>"; }).join("") + "</select></div>";
     $("classConta").textContent = (daFiltrare ? totFiltrati + " titoli con i filtri scelti" : tickers.length + " titoli analizzati") + (q ? " · ricerca: «" + S.filtroClass.trim() + "»" : "");

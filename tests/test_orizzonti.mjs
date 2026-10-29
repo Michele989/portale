@@ -109,4 +109,14 @@ assert.ok(Math.abs(v1.finale.p50) < 5, "centro vicino a zero");
   const anom = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true, datiOk: false, gruppo: { breve: gruppoBuono } });
   assert.ok(["bassa", "insufficiente"].includes(anom.breve.affidabilita));
 }
+// probabilita' di un rialzo minimo: tabelle di percentili coerenti
+for (const k of ["breve", "medio", "lungo"]) {
+  const t = su[k].storico.tutti;
+  assert.equal(t.pct.length, 101); assert.equal(t.pctMax.length, 101);
+  for (let q = 1; q <= 100; q++) { assert.ok(t.pct[q] >= t.pct[q - 1], "pct crescente"); assert.ok(t.pctMax[q] >= t.pctMax[q - 1], "pctMax crescente"); }
+  for (let q = 0; q <= 100; q++) assert.ok(t.pctMax[q] >= t.pct[q] - 0.2, "il massimo toccato non e' mai sotto il rendimento finale");
+  assert.ok(Math.abs(t.pct[50] - t.mediana) < 0.2, "il 50esimo percentile e' la mediana");
+}
+// registro notturno: niente calcolo dei massimi
+assert.equal(O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true }).breve.storico.tutti.pct, undefined);
 console.log("test_orizzonti OK", { medio: su.medio.verdetto, affid: su.medio.affidabilita, pPos: Math.round(su.medio.storico.tutti.pPositivi), indLungo: su.lungo.storico.tutti.indipendenti });

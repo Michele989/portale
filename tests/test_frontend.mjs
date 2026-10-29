@@ -237,6 +237,27 @@ assert.match(testo(d, "boxClassifica"), /Breve termine/);
   click(d, $(d, "btnAzzeraClass")); await attendi(20);
   assert.deepEqual(righe(), tutte, "azzera riporta anche i filtri");
 }
+// rialzo scelto dall'utente
+{
+  assert.ok($(d, "sogliaNum") && d.window.document.querySelector('[data-soglia="20"]'), "campo e scorciatoie del rialzo");
+  assert.match(testo(d, "risultati"), /Rialzo di almeno \+10%/, "soglia predefinita 10%");
+  assert.match(testo(d, "risultati"), /Il rovescio della medaglia/, "mostra anche il rischio di calo");
+  assert.match(testo(d, "risultati"), /titoli falliti|falliti o usciti/, "avviso sul campione");
+  assert.match(testo(d, "boxClassifica"), /calo di almeno 10%/);
+  assert.match(testo(d, "risultati"), /Scala delle probabilità.*nel 90% dei casi almeno/, "scala delle probabilita'");
+  click(d, d.window.document.querySelector('[data-soglia="20"]')); await attendi(30);
+  assert.match(testo(d, "risultati"), /Rialzo di almeno \+20%/, "cambia al 20%");
+  assert.match(testo(d, "boxClassifica"), /calo di almeno 20%/);
+  assert.match(testo(d, "risultati"), /toccato \+20%|conti anche chi ha toccato \+20%/);
+  const rig = () => [...d.window.document.querySelectorAll("#boxClassifica tr[data-vai]")].map((r) => r.getAttribute("data-vai"));
+  const prima = rig();
+  const pr = d.window.document.querySelector('#classFiltri [data-f="pr"][data-v="50"]'); assert.ok(pr, "filtro probabilita'");
+  click(d, pr); await attendi(20);
+  assert.ok(rig().length <= prima.length, "il filtro non aggiunge titoli");
+  click(d, $(d, "btnAzzeraClass")); await attendi(20);
+  assert.deepEqual(rig(), prima);
+  click(d, d.window.document.querySelector('[data-soglia="10"]')); await attendi(20);
+}
 click(d, d.window.document.querySelector('[data-oz="medio"]')); await attendi(30);
 if (process.env.SNAP) { const { writeFileSync } = await import("node:fs"); writeFileSync(process.env.SNAP, "<!doctype html>" + d.window.document.documentElement.outerHTML.replace(/<script[\s\S]*?<\/script>/g, "")); }
 assert.deepEqual(d.window.errori, []);
