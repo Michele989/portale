@@ -1,0 +1,20 @@
+name: Test
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Installa
+        run: cd tests && npm install
+      - name: Controllo tipi
+        run: cd tests && npm run tipi
+      - name: Test
+        run: cd tests && npm test
+      - name: Installa browser
+        run: cd tests && npx playwright install --with-deps chromium
+      - name: Test nel browser
+        run: cd tests && npm run e2e
