@@ -32,7 +32,9 @@ for (const k of ["breve", "medio", "lungo"]) {
   assert.ok(v.esempi.basso[v.passi.length - 1] <= v.esempi.alto[v.passi.length - 1], "esempio basso <= alto");
   assert.ok(v.finale.p10 < v.finale.p90 && v.volAnnua > 0);
 }
-assert.equal(su.medio.verdetto, "favorevole", "rialzo costante -> medio favorevole");
+// FASE 3: in un rialzo costante OGNI periodo sale: nessun vantaggio sul "solito" -> mai favorevole
+assert.notEqual(su.medio.verdetto, "favorevole", "rialzo costante: nessun vantaggio sul solito");
+assert.ok(su.medio.punteggio100 >= 0 && su.medio.punteggio100 <= 100);
 assert.equal(su.medio.storico.tutti.pPositivi > 55, true);
 assert.ok(su.breve.storico.tutti.indipendenti > 30, "breve: molti periodi indipendenti");
 assert.ok(su.lungo.storico.tutti.indipendenti <= 5, "lungo: pochi periodi indipendenti");
@@ -65,7 +67,7 @@ assert.ok(Math.abs(v1.finale.p50) < 5, "centro vicino a zero");
 {
   const ser = serie(1500, 21, 0.0008);
   const contr = O.contributoProfili(ser);
-  assert.ok(contr.length >= 3 && contr.length <= 12, "profili presenti: " + contr.length);
+  assert.ok(contr.length >= 3 && contr.length <= 15, "profili presenti: " + contr.length);
   for (const r of contr) {
     assert.equal(r.hist.length, O.HIST_LEN); assert.equal(r.hist.reduce((a, b) => a + b, 0), r.n, "istogramma = casi");
     assert.ok(r.pos <= r.n && r.indip >= 1 && r.indip <= r.n);
@@ -100,7 +102,8 @@ assert.ok(Math.abs(v1.finale.p50) < 5, "centro vicino a zero");
   for (const k of ["breve", "medio", "lungo"]) {
     assert.equal(conBuono[k].confermaGruppo, true);
     assert.ok(ord[conBuono[k].affidabilita] >= ord[base[k].affidabilita], k + ": l'affidabilita' non scende");
-    if (base[k].affidabilita === "bassa" || base[k].affidabilita === "media") assert.equal(ord[conBuono[k].affidabilita], ord[base[k].affidabilita] + 1, k + ": sale di un livello");
+    if (base[k].affidabilita === "bassa" && conBuono[k].oos.esito === "conferma" && conBuono[k].fragile !== true) assert.equal(conBuono[k].affidabilita, "media", k + ": il gruppo alza da bassa a media");
+    assert.notEqual(conBuono[k].affidabilita, "alta", k + ": il gruppo non porta mai ad alta");
   }
   // campione di gruppo troppo piccolo: nessuna conferma e nessun effetto
   const piccolo = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true, gruppo: { medio: { titoli: 3, n: 30, indip: 5, pos: 3, hist: gruppoBuono.hist } } });
@@ -119,4 +122,105 @@ for (const k of ["breve", "medio", "lungo"]) {
 }
 // registro notturno: niente calcolo dei massimi
 assert.equal(O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true }).breve.storico.tutti.pct, undefined);
+// ---- FASE 1: affidabilita' "alta" severa
+assert.equal(O.livello(3, 10), "insufficiente");
+assert.equal(O.livello(10, 10), "bassa");
+assert.equal(O.livello(50, 10), "media");
+assert.equal(O.livello(200, 20), "media", "intervallo largo: mai alta");
+assert.equal(O.livello(200, 14), "alta");
+assert.equal(O.livello(79, 5), "media", "servono 80 periodi");
+assert.ok(O.ampiezzaWilson(50, 100) > 18 && O.ampiezzaWilson(50, 100) < 21, "ampiezza Wilson n=100: " + O.ampiezzaWilson(50, 100));
+assert.ok(O.ampiezzaWilson(50, 200) < 15 && O.ampiezzaWilson(50, 150) > 15);
+assert.equal(O.ampiezzaWilson(null, 10), null);
+for (const k of ["breve", "medio", "lungo"]) {
+  const o = su[k];
+  assert.ok(o.affidabilita !== "alta" || (o.storico.tutti.indipendenti >= 80 && o.ampiezza95 <= 15), k + ": alta solo con 80 periodi e intervallo stretto");
+}
+
+// ---- FASE 1: due modelli. Un titolo in forte ribasso usa il modello "rimbalzo" (mai 0/4 da trend + "rimbalzo")
+{
+  const base = serie(1300, 31, 0.0006);
+  let p = base[base.length - 1].c;
+  const giu = [];
+  for (let i = 0; i < 25; i++) { const c = p * 0.985; giu.push({ d: new Date(2025, 0, 1 + i).toISOString().slice(0, 10), h: p * 1.003, l: c * 0.997, c, v: 1e6 }); p = c; }
+  const ser = base.concat(giu);
+  const r = O.analizzaOrizzonti(ser, { senzaVentaglio: true });
+  const oggi = O.profiliOggi(ser);
+  for (const k of ["breve", "medio", "lungo"]) {
+    assert.equal(r[k].modello, "rimbalzo", k + ": modello rimbalzo");
+    assert.equal(oggi[k], O.PROFILO_RIMBALZO);
+    assert.ok(r[k].criteri.some((c) => /Prezzo almeno 5% sotto/.test(c.t)) && !r[k].criteri.some((c) => /RSI tra 45 e 70/.test(c.t)), k + ": criteri propri del rimbalzo");
+    assert.match(r[k].storico.profilo, /ribasso deciso/);
+  }
+  const contr = O.contributoProfili(ser);
+  assert.ok(contr.some((x) => x.profilo === O.PROFILO_RIMBALZO), "il profilo rimbalzo alimenta il gruppo");
+  // titolo in trend normale: modello trend
+  const sano = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true });
+  for (const k of ["breve", "medio", "lungo"]) assert.equal(sano[k].modello, "trend");
+}
+
+// ---- FASE 1: confronto con il gruppo coerente (titolo peggio / meglio / in linea)
+{
+  const mk = (pos, n) => { const hh = new Array(O.HIST_LEN).fill(0); hh[O.indiceHist(0.03)] = pos; hh[O.indiceHist(-0.02)] = n - pos; return { titoli: 40, n, indip: 400, pos, hist: hh }; };
+  const ref = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true });
+  const pT = ref.medio.storico[ref.medio.storico.usato === "simili" ? "simili" : "tutti"].pPositivi;
+  const peggio = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true, gruppo: { medio: mk(Math.round((pT + 15) * 10), 1000) } });
+  assert.equal(peggio.medio.confrontoGruppo.esito, "peggio");
+  const meglio = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true, gruppo: { medio: mk(Math.max(1, Math.round((pT - 15) * 10)), 1000) } });
+  assert.equal(meglio.medio.confrontoGruppo.esito, "meglio");
+  const linea = O.analizzaOrizzonti(serie(1300, 11, 0.0012), { senzaVentaglio: true, gruppo: { medio: mk(Math.round(pT * 10), 1000) } });
+  assert.equal(linea.medio.confrontoGruppo.esito, "in_linea");
+  assert.equal(ref.medio.confrontoGruppo, null);
+}
 console.log("test_orizzonti OK", { medio: su.medio.verdetto, affid: su.medio.affidabilita, pPos: Math.round(su.medio.storico.tutti.pPositivi), indLungo: su.lungo.storico.tutti.indipendenti });
+
+// ---------------------------------------------------------------- FASE 3
+function regimi(n, seed, blocco = 120) {
+  let s = seed, p = 100; const cron = [];
+  const rnd = () => (s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  for (let i = 0; i < n; i++) {
+    const up = Math.floor(i / blocco) % 2 === 0;
+    const r = (rnd() - 0.5) * 0.02 + (up ? 0.0035 : -0.0015);
+    const c = p * (1 + r);
+    cron.push({ d: new Date(2019, 0, 1 + i).toISOString().slice(0, 10), h: Math.max(p, c) * 1.004, l: Math.min(p, c) * 0.996, c, v: 1e6 });
+    p = c;
+  }
+  return cron;
+}
+const mom = O.analizzaOrizzonti(regimi(1300, 7, 120), { senzaVentaglio: true });
+const b = mom.breve;
+assert.equal(b.verdetto, "favorevole", "con vero vantaggio sul solito -> favorevole");
+assert.ok(b.vantaggio > 0 && b.vantaggioMin > b.base, "favorevole solo se limite inferiore > solito");
+assert.equal(b.versione, O.VERSIONE_MODELLO);
+assert.equal(b.oos.esito, "conferma");
+assert.notEqual(b.affidabilita, "alta", "poche conferme: mai alta");
+// scomposizione: la somma dei punti e' il punteggio (entro il tetto 0-100)
+for (const k of ["breve", "medio", "lungo"]) {
+  const o = mom[k];
+  const somma = Math.round(Math.max(0, Math.min(100, o.scomposizione.reduce((a, x) => a + x.punti, 0))));
+  if (o.verdetto !== "non_valutabile") assert.equal(o.punteggio100, somma, k + " scomposizione = punteggio");
+  assert.ok(o.scomposizione.length >= 5);
+}
+// regime di mercato debole: il trend favorevole viene declassato
+const reg = O.analizzaOrizzonti(regimi(1300, 7, 120), { senzaVentaglio: true, regimeSfavorevole: true });
+assert.equal(reg.breve.verdetto, "neutro", "mercato debole declassa il trend");
+assert.equal(reg.breve.regimeSfavorevole, true);
+assert.ok(reg.breve.punteggio100 < b.punteggio100);
+// trimestrale in arrivo: affidabilita' al massimo media + penalita'
+const tr = O.analizzaOrizzonti(regimi(1300, 7, 120), { senzaVentaglio: true, trimestraleInArrivo: true });
+assert.ok(["media", "bassa"].includes(tr.breve.affidabilita)); assert.ok(tr.breve.punteggio100 < b.punteggio100);
+// dati incerti: affidabilita' bassa e punteggio non nei primi posti
+const inc = O.analizzaOrizzonti(regimi(1300, 7, 120), { senzaVentaglio: true, datiIncerti: true });
+assert.equal(inc.breve.affidabilita, "bassa"); assert.ok(inc.breve.punteggio100 <= 39); assert.equal(inc.breve.datiIncerti, true);
+// costi e tasse
+assert.equal(O.rendimentoNetto(10, 0.3, 26), (10 - 0.3) * 0.74);
+assert.equal(O.rendimentoNetto(-5, 0.3, 26), -5.3);
+assert.equal(O.rendimentoNetto(null), null);
+assert.ok(b.netto.mediana < b.storico.simili.mediana, "netto < lordo");
+// empirical Bayes: poche osservazioni -> si avvicina al gruppo; molte -> resta il dato
+assert.ok(O.restringi(90, 4, 50) < 60); assert.ok(O.restringi(90, 400, 50) > 88);
+// Wilson
+assert.ok(O.wilsonBasso(60, 10) < O.wilsonBasso(60, 200)); assert.ok(O.wilsonBasso(60, 200) < 60);
+// robustezza: serie corta -> non valutata
+assert.equal(O.analizzaOrizzonti(serie(150, 3, 0.0005), { senzaVentaglio: true }).breve.fragile, null);
+console.log("FASE 3 OK");

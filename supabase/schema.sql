@@ -620,3 +620,335 @@ end $$;
 drop trigger if exists un_solo_admin on public.admins;
 create trigger un_solo_admin before insert on public.admins
   for each row execute function public.un_solo_admin();
+
+-- =========================================================================
+-- 10) FASE 3-5: registro con probabilita' dichiarata, calibrazione, stato servizio, riuso gratuito,
+--     limiti di velocita', esportazione/cancellazione dati.
+-- =========================================================================
+
+-- 10a) Il registro ricorda modello, versione e probabilita' dichiarata (serve a misurare la calibrazione)
+alter table public.verdetti_orizzonte add column if not exists modello text;
+alter table public.verdetti_orizzonte add column if not exists versione text;
+alter table public.verdetti_orizzonte add column if not exists prob_dichiarata numeric;  -- % di rialzo dichiarata al momento del segnale (0-100)
+alter table public.verdetti_orizzonte add column if not exists vantaggio numeric;        -- punti % sul "solito"
+alter table public.verdetti_orizzonte add column if not exists punteggio100 integer;
+alter table public.verdetti_orizzonte add column if not exists affidabilita text;
+create index if not exists verdetti_esito_idx on public.verdetti_orizzonte (data_verdetto) where data_esito is not null;
+
+-- 10b) Pagina pubblica "Affidabilita'": solo dati aggregati (nessun dato personale)
+create or replace function public.registro_pubblico()
+returns jsonb
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  with chiusi as (
+    select * from public.verdetti_orizzonte where data_esito is not null and verdetto in ('favorevole','neutro','sfavorevole')
+  ),
+  per_o as (
+    select orizzonte,
+           count(*) n,
+           round(100.0 * count(*) filter (where rendimento > 0) / count(*), 1) base_pct,
+           count(*) filter (where verdetto = 'favorevole') n_fav,
+           round(100.0 * count(*) filter (where verdetto = 'favorevole' and rendimento > 0) / nullif(count(*) filter (where verdetto = 'favorevole'), 0), 1) fav_pct,
+           count(*) filter (where verdetto = 'sfavorevole') n_sfav,
+           round(100.0 * count(*) filter (where verdetto = 'sfavorevole' and rendimento > 0) / nullif(count(*) filter (where verdetto = 'sfavorevole'), 0), 1) sfav_pct,
+           count(*) filter (where verdetto = 'neutro') n_neu,
+           round(100.0 * count(*) filter (where verdetto = 'neutro' and rendimento > 0) / nullif(count(*) filter (where verdetto = 'neutro'), 0), 1) neu_pct
+      from chiusi group by orizzonte
+  ),
+  fasce as (
+    select (least(floor(prob_dichiarata / 10), 9) * 10)::int da, count(*) n,
+           round(avg(prob_dichiarata)::numeric, 1) dichiarato,
+           round(100.0 * count(*) filter (where rendimento > 0) / count(*), 1) osservato
+      from chiusi where prob_dichiarata is not null group by 1
+  ),
+  mesi as (
+    select to_char(date_trunc('month', data_esito), 'YYYY-MM') mese, count(*) n,
+           round(100.0 * count(*) filter (where verdetto = 'favorevole' and rendimento > 0) / nullif(count(*) filter (where verdetto = 'favorevole'), 0), 1) fav_pct,
+           round(100.0 * count(*) filter (where verdetto = 'sfavorevole' and rendimento > 0) / nullif(count(*) filter (where verdetto = 'sfavorevole'), 0), 1) sfav_pct
+      from chiusi group by 1
+  ),
+  br as (
+    select count(*) n,
+           avg(power(prob_dichiarata / 100.0 - (case when rendimento > 0 then 1 else 0 end), 2)) brier,
+           avg(power(sum_b.p - (case when rendimento > 0 then 1 else 0 end), 2)) brier_base
+      from chiusi, (select coalesce(avg(case when rendimento > 0 then 1.0 else 0 end), 0.5) p from chiusi) sum_b
+     where prob_dichiarata is not null
+  )
+  select jsonb_build_object(
+    'dal', (select min(data_verdetto) from public.verdetti_orizzonte),
+    'chiusi', (select count(*) from chiusi),
+    'aperti', (select count(*) from public.verdetti_orizzonte where data_esito is null),
+    'orizzonti', coalesce((select jsonb_agg(to_jsonb(p) order by case orizzonte when 'breve' then 1 when 'medio' then 2 else 3 end) from per_o p), '[]'::jsonb),
+    'calibrazione', coalesce((select jsonb_agg(to_jsonb(f) order by da) from fasce f), '[]'::jsonb),
+    'mesi', coalesce((select jsonb_agg(to_jsonb(m) order by mese) from mesi m), '[]'::jsonb),
+    'brier', (select round(brier::numeric, 4) from br),
+    'brier_base', (select round(brier_base::numeric, 4) from br),
+    'brier_n', (select n from br)
+  );
+$$;
+revoke all on function public.registro_pubblico() from public;
+grant execute on function public.registro_pubblico() to anon, authenticated, service_role;
+
+-- 10c) Declassamento automatico: se per 2 mesi di fila la % osservata dei "favorevoli" si discosta di oltre
+--      10 punti dalla probabilita' dichiarata (con almeno 30 casi al mese), il modello viene declassato.
+create table if not exists public.modelli_declassati (
+  modello text not null,
+  orizzonte text not null,
+  dal date not null default current_date,
+  motivo text,
+  primary key (modello, orizzonte)
+);
+alter table public.modelli_declassati enable row level security;
+drop policy if exists declassati_lettura on public.modelli_declassati;
+create policy declassati_lettura on public.modelli_declassati for select to anon, authenticated using (true);
+revoke insert, update, delete, truncate on public.modelli_declassati from public, anon, authenticated;
+
+create or replace function public.aggiorna_declassamenti(p_min integer default 30, p_soglia numeric default 10)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare r record; fuori integer; cnt integer := 0;
+begin
+  for r in select distinct coalesce(modello, 'trend') m, orizzonte o from public.verdetti_orizzonte where data_esito is not null loop
+    select count(*) into fuori from (
+      select date_trunc('month', data_esito) mese,
+             count(*) n, avg(prob_dichiarata) dich,
+             100.0 * count(*) filter (where rendimento > 0) / count(*) oss
+        from public.verdetti_orizzonte
+       where coalesce(modello, 'trend') = r.m and orizzonte = r.o and verdetto = 'favorevole'
+         and prob_dichiarata is not null and data_esito is not null
+         and date_trunc('month', data_esito) >= date_trunc('month', current_date) - interval '2 months'
+         and date_trunc('month', data_esito) < date_trunc('month', current_date)
+       group by 1 having count(*) >= p_min
+    ) x where abs(oss - dich) > p_soglia;
+    if fuori >= 2 then
+      insert into public.modelli_declassati(modello, orizzonte, motivo)
+        values (r.m, r.o, 'Calibrazione fuori di oltre ' || p_soglia || ' punti per 2 mesi') on conflict do nothing;
+      cnt := cnt + 1;
+    else
+      delete from public.modelli_declassati where modello = r.m and orizzonte = r.o;
+    end if;
+  end loop;
+  return cnt;
+end $$;
+revoke all on function public.aggiorna_declassamenti(integer, numeric) from public, anon, authenticated;
+grant execute on function public.aggiorna_declassamenti(integer, numeric) to service_role;
+
+-- 10d) Report mensile (per l'admin): calibrazione, Brier e vantaggio per modello e orizzonte
+create or replace function public.report_mensile(p_mese date default (date_trunc('month', current_date) - interval '1 month')::date)
+returns jsonb
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'modello', m, 'orizzonte', o, 'versione', v, 'n', n,
+      'fav_n', nf, 'fav_dichiarato', round(df::numeric, 1), 'fav_osservato', round(oss::numeric, 1),
+      'base', round(base::numeric, 1), 'vantaggio', round((oss - base)::numeric, 1),
+      'brier', round(br::numeric, 4)) order by m, o), '[]'::jsonb)
+  from (
+    select coalesce(modello, 'trend') m, orizzonte o, max(versione) v, count(*) n,
+           count(*) filter (where verdetto = 'favorevole') nf,
+           avg(prob_dichiarata) filter (where verdetto = 'favorevole') df,
+           100.0 * count(*) filter (where verdetto = 'favorevole' and rendimento > 0) / nullif(count(*) filter (where verdetto = 'favorevole'), 0) oss,
+           100.0 * count(*) filter (where rendimento > 0) / count(*) base,
+           avg(power(prob_dichiarata / 100.0 - (case when rendimento > 0 then 1 else 0 end), 2)) filter (where prob_dichiarata is not null) br
+      from public.verdetti_orizzonte
+     where data_esito >= p_mese and data_esito < (p_mese + interval '1 month')::date
+     group by 1, 2
+  ) t;
+$$;
+revoke all on function public.report_mensile(date) from public, anon, authenticated;
+grant execute on function public.report_mensile(date) to service_role;
+
+-- 10e) Stato del servizio e log degli errori
+create table if not exists public.servizio_log (
+  id bigint generated always as identity primary key,
+  quando timestamptz not null default now(),
+  livello text not null check (livello in ('info', 'avviso', 'errore')),
+  componente text not null,
+  messaggio text not null
+);
+create index if not exists servizio_log_idx on public.servizio_log (quando desc);
+alter table public.servizio_log enable row level security;  -- solo server
+
+create table if not exists public.precarica_run (
+  id bigint generated always as identity primary key,
+  iniziato_il timestamptz not null default now(),
+  finito_il timestamptz,
+  titoli_ok integer not null default 0,
+  titoli_errore integer not null default 0,
+  titoli_incerti integer not null default 0,
+  note text
+);
+alter table public.precarica_run enable row level security;  -- solo server
+
+create or replace function public.stato_servizio()
+returns jsonb
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'ultima_run', (select jsonb_build_object('quando', coalesce(finito_il, iniziato_il), 'ok', titoli_ok, 'errori', titoli_errore, 'incerti', titoli_incerti)
+                     from public.precarica_run order by iniziato_il desc limit 1),
+    'titoli_in_cache', (select count(*) from public.price_cache),
+    'titoli_aggiornati_24h', (select count(*) from public.price_cache where aggiornato_il > now() - interval '24 hours'),
+    'errori_24h', (select count(*) from public.servizio_log where livello = 'errore' and quando > now() - interval '24 hours'),
+    'modelli_declassati', coalesce((select jsonb_agg(jsonb_build_object('modello', modello, 'orizzonte', orizzonte, 'dal', dal)) from public.modelli_declassati), '[]'::jsonb),
+    'adesso', now()
+  );
+$$;
+revoke all on function public.stato_servizio() from public;
+grant execute on function public.stato_servizio() to anon, authenticated, service_role;
+
+create or replace function public.scrivi_log(p_livello text, p_componente text, p_messaggio text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  insert into public.servizio_log(livello, componente, messaggio) values (p_livello, left(p_componente, 40), left(p_messaggio, 500));
+  delete from public.servizio_log where quando < now() - interval '60 days';
+$$;
+revoke all on function public.scrivi_log(text, text, text) from public, anon, authenticated;
+grant execute on function public.scrivi_log(text, text, text) to service_role;
+
+-- 10f) Riuso gratuito: stesso titolo, stessa data dell'ultima barra, stesso utente -> nessun uso scalato
+create table if not exists public.analisi_utente (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  ticker text not null check (ticker ~ '^[A-Z0-9.-]{1,12}$'),
+  data_barra date not null,
+  primo_il timestamptz not null default now(),
+  riusi integer not null default 0,
+  primary key (user_id, ticker, data_barra)
+);
+alter table public.analisi_utente enable row level security;
+drop policy if exists au_select_own on public.analisi_utente;
+create policy au_select_own on public.analisi_utente for select to authenticated using (user_id = auth.uid());
+revoke insert, update, delete, truncate on public.analisi_utente from public, anon, authenticated;
+
+-- ritorna {usi, riuso}: usi = usi rimasti (-1 = esauriti); riuso = true se gia' pagata oggi (nessun uso scalato)
+create or replace function public.consuma_analisi(p_user uuid, p_ticker text, p_data date)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare usi integer;
+begin
+  if exists (select 1 from public.analisi_utente where user_id = p_user and ticker = p_ticker and data_barra = p_data) then
+    update public.analisi_utente set riusi = riusi + 1 where user_id = p_user and ticker = p_ticker and data_barra = p_data;
+    select usi_rimasti into usi from public.access_keys where user_id = p_user and stato = 'attiva' and (scade_il is null or scade_il > now()) order by id desc limit 1;
+    return jsonb_build_object('usi', coalesce(usi, 0), 'riuso', true,
+      'risparmiati', (select coalesce(sum(riusi), 0) from public.analisi_utente where user_id = p_user));
+  end if;
+  usi := public.consuma_uso(p_user);
+  if usi >= 0 then
+    insert into public.analisi_utente(user_id, ticker, data_barra) values (p_user, p_ticker, p_data) on conflict do nothing;
+  end if;
+  return jsonb_build_object('usi', usi, 'riuso', false,
+    'risparmiati', (select coalesce(sum(riusi), 0) from public.analisi_utente where user_id = p_user));
+end $$;
+revoke all on function public.consuma_analisi(uuid, text, date) from public, anon, authenticated;
+grant execute on function public.consuma_analisi(uuid, text, date) to service_role;
+
+-- chi rimborsa (analisi fallita) deve anche togliere il segno di "gia' pagata"
+create or replace function public.annulla_analisi(p_user uuid, p_ticker text, p_data date)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.analisi_utente where user_id = p_user and ticker = p_ticker and data_barra = p_data;
+  return public.rimborsa_uso(p_user);
+end $$;
+revoke all on function public.annulla_analisi(uuid, text, date) from public, anon, authenticated;
+grant execute on function public.annulla_analisi(uuid, text, date) to service_role;
+
+-- 10g) Limite di velocita' (login e API): finestra fissa per chiave
+create table if not exists public.limiti_velocita (
+  chiave text primary key,
+  finestra timestamptz not null,
+  n integer not null default 0
+);
+alter table public.limiti_velocita enable row level security;  -- solo server
+
+create or replace function public.controlla_limite(p_chiave text, p_max integer, p_secondi integer)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare r public.limiti_velocita;
+begin
+  insert into public.limiti_velocita(chiave, finestra, n) values (p_chiave, now(), 1)
+    on conflict (chiave) do update
+      set n = case when public.limiti_velocita.finestra < now() - make_interval(secs => p_secondi) then 1 else public.limiti_velocita.n + 1 end,
+          finestra = case when public.limiti_velocita.finestra < now() - make_interval(secs => p_secondi) then now() else public.limiti_velocita.finestra end
+    returning * into r;
+  return r.n <= p_max;
+end $$;
+revoke all on function public.controlla_limite(text, integer, integer) from public, anon, authenticated;
+grant execute on function public.controlla_limite(text, integer, integer) to service_role;
+
+-- 10h) Diritti dell'utente (GDPR): esportare e cancellare i propri dati
+create or replace function public.esporta_miei_dati()
+returns jsonb
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare u uuid := auth.uid();
+begin
+  if u is null then raise exception 'non autenticato'; end if;
+  return jsonb_build_object(
+    'esportato_il', now(),
+    'profilo', (select to_jsonb(p) - 'user_id' from public.profiles p where p.user_id = u),
+    'lista', coalesce((select jsonb_agg(to_jsonb(w) - 'user_id') from public.watchlist w where w.user_id = u), '[]'::jsonb),
+    'portafoglio', coalesce((select jsonb_agg(to_jsonb(f) - 'user_id') from public.portfolio f where f.user_id = u), '[]'::jsonb),
+    'impostazioni', (select to_jsonb(i) - 'user_id' - 'avvisi_token' from public.impostazioni_rischio i where i.user_id = u),
+    'chiavi', coalesce((select jsonb_agg(to_jsonb(k) - 'user_id') from public.access_keys k where k.user_id = u), '[]'::jsonb),
+    'analisi_effettuate', coalesce((select jsonb_agg(to_jsonb(a) - 'user_id') from public.analisi_utente a where a.user_id = u), '[]'::jsonb)
+  );
+end $$;
+revoke all on function public.esporta_miei_dati() from public, anon;
+grant execute on function public.esporta_miei_dati() to authenticated;
+
+create or replace function public.elimina_mio_account()
+returns void
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare u uuid := auth.uid();
+begin
+  if u is null then raise exception 'non autenticato'; end if;
+  if exists (select 1 from public.admins where user_id = u) then raise exception 'l''account amministratore non si cancella da qui'; end if;
+  delete from auth.users where id = u;  -- le tabelle collegate si svuotano a cascata
+end $$;
+revoke all on function public.elimina_mio_account() from public, anon;
+grant execute on function public.elimina_mio_account() to authenticated;
+
+-- 10i) Controllo di sicurezza: ogni tabella pubblica deve avere la RLS attiva (usata da test e checklist)
+create or replace function public.tabelle_senza_rls()
+returns setof text
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select c.relname::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity;
+$$;
+revoke all on function public.tabelle_senza_rls() from public, anon, authenticated;
+grant execute on function public.tabelle_senza_rls() to service_role;

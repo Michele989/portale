@@ -114,6 +114,14 @@ Deno.serve(async (req: Request) => {
         return risposta({ ok: true, dal: data.dal, giorno, oggi, orizzonti: riepilogoVerdetti(data.righe || [], data.aperti || {}) });
       }
 
+      case "report": {
+        const mese = /^\d{4}-\d{2}$/.test(String(b.mese || "")) ? String(b.mese) + "-01" : undefined;
+        const { data: righe } = await sb.rpc("report_mensile", mese ? { p_mese: mese } : {});
+        const { data: stato } = await sb.rpc("stato_servizio");
+        const { data: log } = await sb.from("servizio_log").select("quando, livello, componente, messaggio").order("quando", { ascending: false }).limit(30);
+        return risposta({ ok: true, righe: righe || [], stato, log: log || [] });
+      }
+
       case "crea_chiave": {
         const utente = await trovaUtente(String(b.username || ""));
         if (!utente) return risposta({ ok: false, errore: "Utente non trovato. Controlla l'username digitato." }, 404);

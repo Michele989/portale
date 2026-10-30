@@ -218,4 +218,63 @@ assert.equal((await db.query(`select count(*)::int n from access_keys where user
   assert.equal((await come(u1, () => db.query(`select count(*)::int n from admins`))).rows[0].n, 0 + (await come(u1, () => db.query(`select count(*)::int n from admins`))).rows[0].n);
   await db.query(`delete from admins`);
 }
+
+// ---- FASE 3-5: registro pubblico, declassamento, riuso, limiti, dati personali, RLS ----
+{
+  await db.query(`delete from verdetti_orizzonte`);
+  const ins = (t, o, v, prob, rend, data = "2026-03-02", fine = "2026-04-01", modello = "trend") =>
+    db.query(`insert into verdetti_orizzonte(ticker,orizzonte,data_verdetto,prezzo,verdetto,prob_dichiarata,modello,versione,data_esito,rendimento) values ($1,$2,$3,100,$4,$5,$6,'2.0',$7,$8)`, [t, o, data, v, prob, modello, fine, rend]);
+  await ins("R1", "breve", "favorevole", 70, 3); await ins("R2", "breve", "favorevole", 70, -2);
+  await ins("R3", "breve", "sfavorevole", 40, -1); await ins("R4", "breve", "sfavorevole", 40, 2); await ins("R5", "breve", "neutro", 50, 1);
+  const rp = await come(a2, async () => (await db.query(`select registro_pubblico() r`)).rows[0].r);
+  assert.equal(rp.chiusi, 5); const ob = rp.orizzonti.find((x) => x.orizzonte === "breve");
+  assert.equal(ob.n_fav, 2); assert.equal(Number(ob.fav_pct), 50); assert.equal(Number(ob.sfav_pct), 50); assert.equal(Number(ob.base_pct), 60);
+  assert.ok(rp.calibrazione.length >= 2 && rp.mesi.length === 1 && rp.brier !== null);
+  await db.exec(`set role anon`); assert.equal((await db.query(`select registro_pubblico() r`)).rows[0].r.chiusi, 5, "pubblico"); await db.exec(`reset role`);
+  // declassamento: 2 mesi con 30+ casi favorevoli dichiarati 80% ma osservati 50%
+  const prev = (m) => { const d = new Date(); d.setMonth(d.getMonth() - m); d.setDate(10); return d.toISOString().slice(0, 10); };
+  for (const m of [1, 2]) for (let i = 0; i < 40; i++) await ins("D" + m + "X" + i, "medio", "favorevole", 80, i % 2 ? 3 : -3, "2025-01-01", prev(m), "rimbalzo");
+  assert.equal((await db.query(`select aggiorna_declassamenti() n`)).rows[0].n, 1);
+  assert.equal((await db.query(`select modello from modelli_declassati`)).rows[0].modello, "rimbalzo");
+  await come(a2, async () => { assert.equal((await db.query(`select count(*)::int n from modelli_declassati`)).rows[0].n, 1); await db.query(`delete from modelli_declassati`); assert.equal((await db.query(`select count(*)::int n from modelli_declassati`)).rows[0].n, 1, "non cancellabile"); });
+  assert.ok(Array.isArray((await db.query(`select report_mensile(date_trunc('month', current_date - interval '1 month')::date) r`)).rows[0].r));
+  await falla((async () => { await db.exec(`set role authenticated`); try { await db.query(`select report_mensile()`); } finally { await db.exec(`reset role`); } })(), "report solo server");
+  // stato servizio e log
+  await db.query(`insert into precarica_run(finito_il,titoli_ok,titoli_errore) values (now(),50,2)`);
+  await db.query(`select scrivi_log('errore','precarica','prova')`);
+  const ss = (await db.query(`select stato_servizio() s`)).rows[0].s;
+  assert.equal(ss.ultima_run.ok, 50); assert.equal(Number(ss.errori_24h), 1);
+  await come(a2, async () => { assert.equal((await db.query(`select count(*)::int n from servizio_log`)).rows[0].n, 0); await falla(db.query(`select scrivi_log('info','x','y')`), "log vietato ai client"); });
+  // riuso gratuito
+  const ur = await nuovo("riuso@x.it", { username: "riuso" });
+  await db.query(`select crea_chiave($1,'MA-RIUSO-0001',5,30,null)`, [ur]);
+  let r1 = (await db.query(`select consuma_analisi($1,'AAPL','2026-10-28') r`, [ur])).rows[0].r;
+  assert.deepEqual([r1.usi, r1.riuso], [4, false]);
+  r1 = (await db.query(`select consuma_analisi($1,'AAPL','2026-10-28') r`, [ur])).rows[0].r;
+  assert.deepEqual([r1.usi, r1.riuso], [4, true], "stessa barra: nessun uso scalato");
+  r1 = (await db.query(`select consuma_analisi($1,'AAPL','2026-10-29') r`, [ur])).rows[0].r;
+  assert.deepEqual([r1.usi, r1.riuso], [3, false], "nuova barra: si paga");
+  await db.query(`select annulla_analisi($1,'AAPL','2026-10-29')`, [ur]);
+  assert.equal((await db.query(`select consuma_analisi($1,'AAPL','2026-10-29') r`, [ur])).rows[0].r.usi, 3, "annullata e rimborsata");
+  await come(ur, async () => { await falla(db.query(`select consuma_analisi($1,'X','2026-10-29')`, [ur]), "vietata ai client"); });
+  // limite di velocita'
+  const lim = []; for (let i = 0; i < 5; i++) lim.push((await db.query(`select controlla_limite('t1', 3, 60) v`)).rows[0].v);
+  assert.deepEqual(lim, [true, true, true, false, false]);
+  await db.query(`update limiti_velocita set finestra = now() - interval '2 minutes'`);
+  assert.equal((await db.query(`select controlla_limite('t1', 3, 60) v`)).rows[0].v, true, "finestra scaduta");
+  // dati personali: esporta ed elimina
+  await db.query(`insert into watchlist(user_id,ticker) values ($1,'MSFT')`, [ur]);
+  const ex = await come(ur, async () => (await db.query(`select esporta_miei_dati() d`)).rows[0].d);
+  assert.equal(ex.lista.length, 1); assert.equal(ex.analisi_effettuate.length, 2); assert.ok(!JSON.stringify(ex).includes("user_id"));
+  await db.exec(`set role anon`); await falla(db.query(`select esporta_miei_dati()`), "anon vietato"); await db.exec(`reset role`);
+  await come(ur, async () => { await db.query(`select elimina_mio_account()`); });
+  assert.equal((await db.query(`select count(*)::int n from watchlist where user_id=$1`, [ur])).rows[0].n, 0, "dati cancellati");
+  assert.equal((await db.query(`select count(*)::int n from auth.users where id=$1`, [ur])).rows[0].n, 0);
+  // l'admin non si cancella da qui
+  const adm = await nuovo("adm@x.it", { username: "capo" });
+  await db.query(`insert into admins(user_id) values ($1)`, [adm]);
+  await come(adm, async () => { await falla(db.query(`select elimina_mio_account()`), "admin protetto"); });
+  // RLS su TUTTE le tabelle
+  assert.deepEqual((await db.query(`select tabelle_senza_rls() t`)).rows.map((x) => x.t).filter(Boolean), [], "tutte le tabelle hanno la RLS");
+}
 console.log("test_schema OK");

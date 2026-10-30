@@ -51,6 +51,9 @@ function creaSb(db, ctx) {
     },
     async rpc(nome, args) {
       if (nome === "track_record") return { data: ctx.track || { chiusi: 0, vinti: 0, persi: 0, scaduti: 0, aperti: 2, calibrazione: [] } };
+      if (nome === "registro_pubblico") return { data: ctx.registro || { chiusi: 0, aperti: 3, orizzonti: [], calibrazione: [], mesi: [] } };
+      if (nome === "esporta_miei_dati") { ctx.esportato = true; return { data: { lista: [], portafoglio: [] } }; }
+      if (nome === "elimina_mio_account") { ctx.eliminato = true; return { data: null }; }
       if (nome === "statistiche_aggregate") return { data: ctx.aggregate || [] };
       if (nome === "username_disponibile") return { data: !db.profiles.some((p) => p.username.toLowerCase() === args.p_username.toLowerCase()) }; return { data: null }; },
     from(tab) {
@@ -103,7 +106,18 @@ function creaFetch(db, ctx) {
       if (ctx.ritardo) await new Promise((r) => setTimeout(r, ctx.ritardo));
       const bars = DATI(body.ticker);
       const an = A.analizzaSerie(bars, { tp: body.tp, sl: body.sl, comm: body.comm, spread: body.spread }, { oggi: new Date(bars[0].d + "T12:00:00Z"), mercato: ctx.mercatoGiu ? { ticker: "SPY", prezzo: 1, sma200: 2, distanza: -10, sopraSma200: false } : null });
-      return J({ ok: true, ticker: body.ticker, ...an, orizzonti: O.analizzaOrizzonti(bars.slice().reverse(), { datiOk: true }), dati_del: new Date(Date.now() - 3600e3).toISOString(), usi_rimasti: k.usi_rimasti });
+      let gr = undefined;
+      if (ctx.gruppoPer && ctx.gruppoPer[body.ticker] !== undefined) {
+        const base = O.analizzaOrizzonti(bars.slice().reverse(), { datiOk: true, senzaVentaglio: true });
+        gr = {};
+        for (const k of ["breve", "medio", "lungo"]) {
+          const st = base[k].storico[base[k].storico.usato === "simili" ? "simili" : "tutti"]; if (!st || st.pPositivi === null) continue;
+          const pos = Math.max(1, Math.min(999, Math.round((st.pPositivi + ctx.gruppoPer[body.ticker]) * 10)));
+          const hh = new Array(O.HIST_LEN).fill(0); hh[O.indiceHist(0.04)] = pos; hh[O.indiceHist(-0.03)] = 1000 - pos;
+          gr[k] = { titoli: 40, n: 1000, indip: 400, pos, hist: hh };
+        }
+      }
+      return J({ ok: true, ticker: body.ticker, ...an, orizzonti: O.analizzaOrizzonti(bars.slice().reverse(), { datiOk: true, gruppo: gr, nomeGruppo: "ETF" }), dati_del: new Date(Date.now() - 3600e3).toISOString(), usi_rimasti: k.usi_rimasti });
     }
     if (url.endsWith("/admin")) {
       const adm = db.admins.some((a) => a.user_id === uid);
@@ -134,14 +148,14 @@ function creaFetch(db, ctx) {
 async function carica(file, { db, ctx, config = true, pre = null }) {
   let html = leggi(file).replace(/<script src="https:\/\/cdn[^>]*><\/script>/, "");
   let cfg = leggi("config.js").replace("INSERISCI_URL_PROGETTO_SUPABASE", config ? "https://prova.supabase.co" : "INSERISCI").replace("INSERISCI_ANON_KEY_SUPABASE", config ? "k".repeat(40) : "x").replace("PAUSA_MS: 7700", "PAUSA_MS: 0");
-  html = html.replace('<script src="config.js"></script>', "<script>" + cfg + "</script>").replace('<script src="comune.js"></script>', "<script>" + leggi("comune.js") + "</script>").replace('<script src="catalogo.js"></script>', "<script>" + leggi("catalogo.js") + "</script>");
+  html = html.replace('<script src="config.js"></script>', "<script>" + cfg + "</script>").replace('<script src="comune.js"></script>', "<script>" + leggi("comune.js") + "</script>").replace('<script src="catalogo.js"></script>', "<script>" + leggi("catalogo.js") + "</script>").replace('<script src="glossario.js"></script>', "<script>" + leggi("glossario.js") + "</script>").replace('<script src="registro.js"></script>', "<script>" + leggi("registro.js") + "</script>");
   const dom = new JSDOM(html, {
     runScripts: "dangerously", url: "https://prova.netlify.app/" + file, pretendToBeVisual: true,
     beforeParse(w) {
       w.supabase = { createClient: () => creaSb(db, ctx) };
       w.fetch = creaFetch(db, ctx);
       w.confirm = () => ctx.conferma !== false; w.prompt = () => ctx.promptRisposta ?? null;
-      w.scrollTo = () => {};
+      w.scrollTo = () => {}; w.URL.createObjectURL = () => "blob:x"; w.HTMLAnchorElement.prototype.click = function () {};
       if (pre) pre(w);
       w.errori = []; w.addEventListener("error", (e) => w.errori.push(e.message));
     },
@@ -178,6 +192,13 @@ await finche(() => !$(d, "vistaApp").classList.contains("hidden"), "area cliente
 assert.equal(ctx.ultimoSignUp.data.username, "luca_88"); assert.equal(ctx.ultimoSignUp.data.termini, "true");
 await finche(() => $(d, "boxStato").textContent.includes("In attesa di abilitazione"), "schermata attesa");
 assert.ok($(d, "boxStato").textContent.includes("luca_88"), "username mostrato");
+// primo accesso: onboarding in 4 passi, chiudibile e ricordato per utente
+assert.ok(!$(d, "onboarding").classList.contains("hidden"), "onboarding al primo accesso");
+assert.match(testo(d, "onbCorpo"), /Passo 1 di 4/);
+for (let i = 2; i <= 4; i++) { click(d, $(d, "onbAvanti")); assert.match(testo(d, "onbCorpo"), new RegExp("Passo " + i + " di 4")); }
+assert.match(testo(d, "onbCorpo"), /non previsioni né consigli|Nessun guadagno è garantito/);
+click(d, $(d, "onbAvanti")); assert.ok($(d, "onboarding").classList.contains("hidden"), "onboarding concluso");
+assert.equal(d.window.localStorage.getItem("ma_onboarding_" + d.window.__MA_APP.S.utente.id), "1", "ricordato per utente");
 assert.equal($(d, "btnAnalizzaTutto").disabled, true, "analisi bloccata senza chiave");
 assert.equal(db.watchlist.filter((w) => w.tipo === "etf").length, 8); assert.equal(db.watchlist.filter((w) => w.tipo === "crescita").length, 5);
 assert.equal(db.watchlist.filter((w) => w.tipo === "azioni").length, 0, "azioni vuote di default");
@@ -190,27 +211,84 @@ assert.match(testo(d, "boxStato"), /Ti restano 20 usi su 20/);
 // pochi usi: bloccato prima di partire
 db.access_keys[0].usi_rimasti = 3; click(d, $(d, "btnAnalizzaTutto")); // stato locale ancora 20 -> parte? no: ricarico
 db.access_keys[0].usi_rimasti = 20;
+ctx.gruppoPer = { VOO: 14, QQQ: -14 };
 click(d, $(d, "btnAnalizzaTutto"));
 await finche(() => /Completato/.test($(d, "progresso").textContent), "fine analisi", 15000);
-assert.equal(d.window.document.querySelectorAll("#risultati .card").length >= 13 - 1, true, "schede mostrate");
+const DOC = d.window.document;
+const righe = () => [...DOC.querySelectorAll("#boxClassifica .riga[data-t]")].map((r) => r.getAttribute("data-t"));
+assert.ok(righe().length >= 10, "righe in classifica: " + righe().length);
+assert.equal(DOC.querySelectorAll("#risultati .card[data-card]").length, 0, "niente piu' schede doppione: una sola classifica");
 assert.match(testo(d, "boxStato"), /Ti restano 7 usi su 20/, "contatore aggiornato: " + testo(d, "boxStato"));
-assert.ok(testo(d, "boxIpervenduti").includes("ARKK"), "ARKK tra gli ipervenduti in cima");
-assert.ok($(d, "risultati").innerHTML.includes("<svg"), "grafici");
-// orizzonte di investimento: classifica, studio nella scheda, cambio di orizzonte
-assert.equal(d.window.document.querySelectorAll("#orizzonteBtns button").length, 3, "tre orizzonti");
-assert.match(testo(d, "boxClassifica"), /Classifica · Medio termine/, "classifica sul medio di default");
-assert.ok(d.window.document.querySelectorAll("#boxClassifica tr[data-vai]").length >= 5, "righe in classifica");
-assert.ok(d.window.document.querySelector("#risultati .card svg.ventaglio"), "ventaglio simulato nella scheda");
-assert.match(testo(d, "risultati"), /Esempio di andamento possibile/);
-assert.match(testo(d, "risultati"), /non sono previsioni/);
-click(d, d.window.document.querySelector('[data-oz="lungo"]')); await attendi(30);
-assert.match(testo(d, "boxClassifica"), /Classifica · Lungo termine/, "cambio orizzonte");
-assert.match(testo(d, "risultati"), /Lungo termine \(circa 1 anno\)/);
-click(d, d.window.document.querySelector('[data-oz="breve"]')); await attendi(30);
-assert.match(testo(d, "boxClassifica"), /Breve termine/);
-// ricerca unica nella classifica (favorevoli + neutri + sfavorevoli)
+// FASE 2: riga compatta con verdetto, punteggio, vantaggio, affidabilita', sparkline e badge
 {
-  const righe = () => [...d.window.document.querySelectorAll("#boxClassifica tr[data-vai]")].map((r) => r.getAttribute("data-vai"));
+  for (const r of DOC.querySelectorAll("#boxClassifica .riga[data-t]")) {
+    const t = r.getAttribute("data-t");
+    assert.ok(r.querySelector(".badge[data-g=verdetto]"), "verdetto in " + t);
+    assert.match(r.querySelector("[data-g=punteggio]").textContent, /^\d{1,3}$/, "punteggio 0-100 in " + t);
+    assert.ok(r.querySelector("[data-g=vantaggio]") && r.querySelector("[data-g=affidabilita]"), "vantaggio e affidabilita' in " + t);
+    assert.ok(r.querySelector("svg.spark"), "sparkline in " + t);
+    assert.ok(r.querySelector("[data-star]") && r.querySelector("[data-cmp]"), "preferito e confronto in " + t);
+  }
+  assert.ok(!/Compra|consigliat/i.test(testo(d, "boxClassifica")), "niente parole da consulenza");
+  // ordine: dal punteggio piu' alto al piu' basso
+  const punti = [...DOC.querySelectorAll("#boxClassifica .riga[data-t]")].map((r) => Number(r.querySelector("[data-g=punteggio]").textContent));
+  const nvFine = punti.slice(); // i non valutabili (0) restano in fondo
+  assert.deepEqual(punti.slice(0, 5), punti.slice(0, 5).slice().sort((x, y) => y - x), "classifica ordinata per punteggio");
+  assert.match(testo(d, "risultati"), /ultima seduta chiusa usata per tutti i titoli/);
+  assert.ok(DOC.querySelector('#boxClassifica [data-g="ipervenduto"]'), "badge ipervenduto presente");
+}
+// popover: significato semplice + dati reali + quanto fidarsi
+{
+  const arkk = DOC.querySelector('#boxClassifica .riga[data-t="ARKK"]'); assert.ok(arkk, "ARKK in classifica");
+  click(d, arkk.querySelector('[data-g="ipervenduto"]'));
+  const pop = $(d, "popover"); assert.ok(!pop.classList.contains("hidden"), "popover aperto");
+  assert.match(pop.textContent, /Ipervenduto/); assert.match(pop.textContent, /RSI a 14 giorni: \d+,\d/, "valore reale dell'RSI"); assert.match(pop.textContent, /Quanto fidarsi/);
+  assert.match(pop.textContent, /ARKK/);
+  d.window.document.dispatchEvent(new d.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); assert.ok(pop.classList.contains("hidden"), "Esc chiude il popover");
+  for (const g of ["verdetto", "punteggio", "vantaggio", "affidabilita"]) {
+    click(d, arkk.querySelector('[data-g="' + g + '"]'));
+    assert.ok(!pop.classList.contains("hidden") && /Quanto fidarsi/.test(pop.textContent) && /Dati considerati/.test(pop.textContent), "popover " + g);
+    if (g === "punteggio") assert.match(pop.textContent, /Vantaggio sul solito: [\d,]+ su 40/, "scomposizione del punteggio");
+    if (g === "verdetto") assert.match(pop.textContent, /Criteri soddisfatti: \d su 4/);
+    click(d, $(d, "chiudiPop"));
+  }
+  click(d, $(d, "btnLegenda")); assert.ok(!$(d, "legenda").classList.contains("hidden")); assert.match(testo(d, "legendaCorpo"), /Vantaggio sul solito[\s\S]*Affidabilità[\s\S]*Dati incerti/);
+  click(d, $(d, "chiudiLegenda")); assert.ok($(d, "legenda").classList.contains("hidden"), "legenda chiusa");
+}
+// pannello di dettaglio a 3 livelli
+{
+  click(d, DOC.querySelector('#boxClassifica [data-vai="ARKK"]'));
+  const pn = $(d, "pannello"); assert.ok(!pn.classList.contains("hidden"), "pannello aperto");
+  const tx = testo(d, "pannelloCorpo");
+  assert.match(tx, /Riassunto[\s\S]*Perché[\s\S]*Per esperti/, "tre livelli nell'ordine");
+  assert.equal($(d, "pannelloCorpo").querySelectorAll(".riass li").length, 3, "riassunto in 3 righe");
+  assert.match(tx, /Modello Rimbalzo/, "ARKK valutato dal modello Rimbalzo");
+  assert.ok(!/RSI tra 45 e 70/.test(tx), "niente criteri di trend per un titolo ipervenduto");
+  assert.ok($(d, "pannelloCorpo").querySelectorAll(".criteri li").length === 4 && /[✓✗]/.test(tx), "criteri con spunte");
+  assert.match(tx, /Vantaggio sul solito/); assert.match(tx, /Dati del \d\d\/\d\d/);
+  const esp = $(d, "pannelloCorpo").querySelector("details.esperti"); assert.ok(esp && !esp.open, "Per esperti chiuso di default");
+  assert.ok(esp.querySelector("svg.ventaglio") && /Esempio di andamento possibile/.test(esp.textContent), "ventaglio tra gli esperti");
+  assert.match(esp.textContent, /non sono previsioni/); assert.match(esp.textContent, /Scala delle probabilità.*nel 90% dei casi almeno/);
+  assert.match(esp.textContent, /Affidabilità storica/); assert.match(esp.textContent, /Tenere sempre il titolo|Compra e tieni/i);
+  assert.match(esp.textContent, /al netto/, "rendimento netto di costi e tasse");
+  assert.ok(!/<b>0<\/b> unità/.test($(d, "pannelloCorpo").innerHTML) && !/0 unità \(≈/.test(tx), "mai \"0 unità\" senza spiegazione");
+  assert.ok(!/Rialzo di almeno \+\d+%/.test(tx), "senza rialzo scelto non compare la soglia");
+  click(d, $(d, "pannelloCorpo").querySelector('[data-g="affidabilita"]')); assert.ok(!$(d, "popover").classList.contains("hidden"), "badge cliccabili anche nel pannello"); click(d, $(d, "chiudiPop"));
+  click(d, $(d, "chiudiPannello")); assert.ok(pn.classList.contains("hidden"), "pannello chiuso");
+  click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]')); assert.match(testo(d, "pannelloCorpo"), /ha fatto peggio del suo gruppo/, "VOO peggio del gruppo");
+  assert.ok(!/Il gruppo conferma il segnale/.test(testo(d, "pannelloCorpo")), "mai 'conferma' quando il titolo fa peggio");
+  click(d, $(d, "chiudiPannello")); click(d, DOC.querySelector('#boxClassifica [data-vai="QQQ"]')); assert.match(testo(d, "pannelloCorpo"), /ha fatto meglio/, "QQQ meglio del gruppo");
+  d.window.document.dispatchEvent(new d.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); assert.ok(pn.classList.contains("hidden"), "Esc chiude il pannello");
+}
+// orizzonte di investimento: cambio e classifica
+assert.equal(DOC.querySelectorAll("#orizzonteBtns button").length, 3, "tre orizzonti");
+assert.match(testo(d, "boxClassifica"), /Classifica · Medio termine/, "classifica sul medio di default");
+click(d, DOC.querySelector('[data-oz="lungo"]')); await attendi(30);
+assert.match(testo(d, "boxClassifica"), /Classifica · Lungo termine/, "cambio orizzonte");
+click(d, DOC.querySelector('[data-oz="breve"]')); await attendi(30);
+assert.match(testo(d, "boxClassifica"), /Breve termine/);
+// ricerca unica e filtri
+{
   const tutte = righe(); assert.ok(tutte.length >= 5);
   const campo = $(d, "cercaClass"); assert.ok(campo && $(d, "btnCercaClass") && $(d, "btnAzzeraClass"), "casella e tasti di ricerca");
   const bersaglio = tutte[0];
@@ -221,54 +299,78 @@ assert.match(testo(d, "boxClassifica"), /Breve termine/);
   campo.value = "qqqzzz"; invia(d, $(d, "formCercaClass")); await attendi(20);
   assert.equal(righe().length, 0); assert.match(testo(d, "boxClassifica"), /Nessun titolo analizzato corrisponde/);
   click(d, $(d, "btnAzzeraClass")); await attendi(20);
-  assert.deepEqual(righe(), tutte, "azzera ripristina tutte le liste");
-  assert.equal($(d, "cercaClass").value, "");
-  // filtri: verdetto, categoria, affidabilita', ordine, azzeramento
-  const pill = (f, v) => d.window.document.querySelector('#classFiltri [data-f="' + f + '"][data-v="' + v + '"]');
-  assert.ok(pill("ver", "favorevole") && pill("cat", "etf") && pill("aff", "3") && pill("pt", "3") && $(d, "filOrd"), "tutti i filtri presenti");
+  assert.deepEqual(righe(), tutte, "azzera ripristina la classifica"); assert.equal($(d, "cercaClass").value, "");
+  const pill = (f, v) => DOC.querySelector('#classFiltri [data-f="' + f + '"][data-v="' + v + '"]');
+  assert.ok(pill("ver", "favorevole") && pill("cat", "etf") && pill("aff", "3") && pill("iper", "1") && pill("pref", "1") && $(d, "filOrd"), "tutti i filtri presenti");
+  assert.ok(!pill("pr", "50"), "filtro probabilita' solo se si sceglie un rialzo");
   click(d, pill("ver", "neutro")); await attendi(20);
-  assert.ok(righe().length < tutte.length && !/Segnale favorevole \(/.test(testo(d, "classCorpo")), "solo neutri");
+  assert.ok(righe().length < tutte.length && righe().every((t) => /Neutro/.test(DOC.querySelector('.riga[data-t="' + t + '"] .badge').textContent)), "solo neutri");
   assert.match(testo(d, "classConta"), /titoli con i filtri scelti/);
-  click(d, pill("ver", "")); click(d, pill("cat", "etf")); await attendi(20);
-  assert.ok(righe().every((t) => (d.window.MA_CATALOGO.find((x) => x[0] === t) || [0, 0, "etf"])[2] === "etf" || ["SPY","VOO","QQQ","VTI","VGK","IEMG","AGG","GLD"].includes(t) || true));
-  click(d, pill("aff", "3")); click(d, pill("pt", "4")); await attendi(20);
-  d.window.document.getElementById("filOrd").value = "nome"; d.window.document.getElementById("filOrd").dispatchEvent(new d.window.Event("change", { bubbles: true })); await attendi(20);
-  { const r = righe(); assert.deepEqual([...r].sort(), [...r].sort()); }
+  click(d, pill("ver", "")); click(d, pill("iper", "1")); await attendi(20);
+  assert.deepEqual(righe(), ["ARKK"].filter((t) => righe().includes(t)).concat(righe().filter((t) => t !== "ARKK")), "solo ipervenduti"); assert.ok(righe().includes("ARKK") && righe().length < tutte.length);
+  click(d, pill("iper", "0")); click(d, pill("aff", "3")); await attendi(20);
+  DOC.getElementById("filOrd").value = "nome"; DOC.getElementById("filOrd").dispatchEvent(new d.window.Event("change", { bubbles: true })); await attendi(20);
+  { const r = righe(); assert.deepEqual(r, [...r].sort(), "ordinamento per nome"); }
   click(d, $(d, "btnAzzeraClass")); await attendi(20);
   assert.deepEqual(righe(), tutte, "azzera riporta anche i filtri");
 }
-// rialzo scelto dall'utente
+// preferiti e filtri salvati per utente
 {
-  assert.ok($(d, "sogliaNum") && d.window.document.querySelector('[data-soglia="20"]'), "campo e scorciatoie del rialzo");
-  assert.match(testo(d, "risultati"), /Rialzo di almeno \+10%/, "soglia predefinita 10%");
-  assert.match(testo(d, "risultati"), /Il rovescio della medaglia/, "mostra anche il rischio di calo");
-  assert.match(testo(d, "risultati"), /titoli falliti|falliti o usciti/, "avviso sul campione");
-  assert.match(testo(d, "boxClassifica"), /calo di almeno 10%/);
-  assert.match(testo(d, "risultati"), /Scala delle probabilità.*nel 90% dei casi almeno/, "scala delle probabilita'");
-  click(d, d.window.document.querySelector('[data-soglia="20"]')); await attendi(30);
-  assert.match(testo(d, "risultati"), /Rialzo di almeno \+20%/, "cambia al 20%");
-  assert.match(testo(d, "boxClassifica"), /calo di almeno 20%/);
-  assert.match(testo(d, "risultati"), /toccato \+20%|conti anche chi ha toccato \+20%/);
-  const rig = () => [...d.window.document.querySelectorAll("#boxClassifica tr[data-vai]")].map((r) => r.getAttribute("data-vai"));
-  const prima = rig();
-  const pr = d.window.document.querySelector('#classFiltri [data-f="pr"][data-v="50"]'); assert.ok(pr, "filtro probabilita'");
-  click(d, pr); await attendi(20);
-  assert.ok(rig().length <= prima.length, "il filtro non aggiunge titoli");
-  click(d, $(d, "btnAzzeraClass")); await attendi(20);
-  assert.deepEqual(rig(), prima);
-  click(d, d.window.document.querySelector('[data-soglia="10"]')); await attendi(20);
+  const t0 = righe()[0], stella = () => DOC.querySelector('.riga[data-t="' + t0 + '"] [data-star]');
+  click(d, stella()); await attendi(10);
+  assert.equal(stella().getAttribute("aria-pressed"), "true", "preferito attivo");
+  const uid = d.window.__MA_APP.S.utente.id;
+  assert.deepEqual(JSON.parse(d.window.localStorage.getItem("ma_pref_" + uid)), [t0], "preferiti salvati per utente");
+  click(d, DOC.querySelector('#classFiltri [data-f="pref"][data-v="1"]')); await attendi(10);
+  assert.deepEqual(righe(), [t0], "solo preferiti");
+  assert.ok(JSON.parse(d.window.localStorage.getItem("ma_fil_" + uid)).pref === 1, "filtro salvato per utente");
+  click(d, DOC.querySelector('#classFiltri [data-f="pref"][data-v="0"]')); await attendi(10);
+  click(d, stella()); await attendi(10); assert.equal(stella().getAttribute("aria-pressed"), "false");
+}
+// confronto affiancato 2-3 titoli
+{
+  const [a, b2, c3, d4] = righe();
+  const cmp = (t) => DOC.querySelector('.riga[data-t="' + t + '"] [data-cmp]');
+  click(d, cmp(a)); assert.ok($(d, "btnConfronta").disabled, "serve almeno 2 titoli");
+  click(d, cmp(b2)); click(d, cmp(c3)); assert.equal($(d, "btnConfronta").disabled, false);
+  click(d, cmp(d4)); assert.equal(d.window.__MA_APP.S.conf.length, 3, "massimo 3 titoli");
+  click(d, $(d, "btnConfronta"));
+  assert.ok(!$(d, "confronto").classList.contains("hidden")); assert.equal($(d, "confrontoCorpo").querySelectorAll("thead th[data-t]").length, 3);
+  assert.match(testo(d, "confrontoCorpo"), /Verdetto[\s\S]*Punteggio 0–100[\s\S]*Vantaggio sul solito[\s\S]*Affidabilità/);
+  click(d, $(d, "chiudiConfronto")); assert.ok($(d, "confronto").classList.contains("hidden"));
+  click(d, $(d, "btnConfPulisci")); assert.equal(d.window.__MA_APP.S.conf.length, 0);
+}
+// rialzo scelto (facoltativo): predefinito «Non scegliere»
+{
+  assert.ok($(d, "sogliaNum") && DOC.querySelector('[data-soglia="20"]') && DOC.querySelector('[data-soglia=""].on'), "campo e scorciatoie; predefinito Non scegliere");
+  assert.equal(d.window.__MA_APP.S.soglia, null);
+  assert.ok(!DOC.querySelector(".r-pr"), "nessuna colonna probabilita' senza scelta");
+  click(d, DOC.querySelector('[data-soglia="10"]')); await attendi(30);
+  assert.ok(DOC.querySelectorAll(".riga .r-pr").length >= 5, "colonna probabilita' con la scelta"); assert.match(testo(d, "boxClassifica"), /▲.*▼/);
+  click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]'));
+  assert.match(testo(d, "pannelloCorpo"), /Rialzo di almeno \+10%/); assert.match(testo(d, "pannelloCorpo"), /Il rovescio della medaglia/, "mostra anche il rischio di calo");
+  assert.match(testo(d, "pannelloCorpo"), /falliti o usciti/, "avviso sul campione");
+  click(d, $(d, "chiudiPannello"));
+  click(d, DOC.querySelector('[data-soglia="20"]')); await attendi(30);
+  click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]')); assert.match(testo(d, "pannelloCorpo"), /Rialzo di almeno \+20%/, "cambia al 20%"); assert.match(testo(d, "pannelloCorpo"), /conti anche chi ha toccato \+20%/); click(d, $(d, "chiudiPannello"));
+  const prima = righe(), pr = DOC.querySelector('#classFiltri [data-f="pr"][data-v="50"]'); assert.ok(pr, "filtro probabilita' con la scelta");
+  click(d, pr); await attendi(20); assert.ok(righe().length <= prima.length, "il filtro non aggiunge titoli");
+  click(d, $(d, "btnAzzeraClass")); await attendi(20); assert.deepEqual(righe(), prima);
+  const uid = d.window.__MA_APP.S.utente.id; assert.equal(JSON.parse(d.window.localStorage.getItem("ma_vista_" + uid)).soglia, 20, "scelta salvata per utente");
+  click(d, DOC.querySelector('[data-soglia=""]')); await attendi(20); assert.equal(d.window.__MA_APP.S.soglia, null);
 }
 click(d, d.window.document.querySelector('[data-oz="medio"]')); await attendi(30);
 if (process.env.SNAP) { const { writeFileSync } = await import("node:fs"); writeFileSync(process.env.SNAP, "<!doctype html>" + d.window.document.documentElement.outerHTML.replace(/<script[\s\S]*?<\/script>/g, "")); }
 assert.deepEqual(d.window.errori, []);
-assert.match(testo(d, "risultati"), /intervallo 95%/);
+click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]')); assert.match(testo(d, "pannelloCorpo"), /intervallo 95%|Scala delle probabilità/); click(d, $(d, "chiudiPannello"));
 assert.equal(ctx.chiamate.every((c) => c.body.tp === 8 && c.body.sl === 8), true, "parametri inviati");
 assert.deepEqual(d.window.errori, []);
 
 // pochi usi
-db.access_keys[0].usi_rimasti = 3;
+db.access_keys[0].usi_rimasti = 3; d.window.__MA_APP.S.rif = "1999-01-01";
 click(d, $(d, "btnRicontrolla") || $(d, "btnAnalizzaTutto"));
 await caricaChiaveDi(d); async function caricaChiaveDi(dd) { dd.window.__MA_APP.S.chiave.usi_rimasti = 3; }
+d.window.__MA_APP.S.rif = "1999-01-01"; // nessun titolo risulta analizzato con gli ultimi dati: tutti da pagare
 click(d, $(d, "btnAnalizzaTutto"));
 await finche(() => /Servono 13 usi/.test($(d, "progresso").textContent), "blocco usi insufficienti");
 db.access_keys[0].usi_rimasti = 7; d.window.__MA_APP.S.chiave.usi_rimasti = 7;
@@ -383,6 +485,8 @@ assert.equal(db.portfolio.length, 1);
 const dim = d.window.__MA_APP.dimensiona({ prezzo: 100, atr14: 2 });
 assert.equal(dim.qta, Math.min(Math.floor(10 / 4), 10));
 
+// portafoglio: verdetto di oggi, distanza da stop/obiettivo, guadagno lordo e netto
+assert.match(testo(d, "tabellaPf"), /Netto stimato[\s\S]*Verdetto oggi[\s\S]*Distanza da stop e obiettivo/); assert.match(testo(d, "tabellaPf"), /Stop [\d,.]+ \(.*dal prezzo\)/);
 // =============== 4) impostazioni ===============
 $(d, "impSl").value = "5"; $(d, "impTp").value = "10"; invia(d, $(d, "formImp")); await attendi(60);
 assert.equal(db.impostazioni_rischio[0].stop_loss, 5); assert.equal(db.impostazioni_rischio[0].take_profit, 10);
@@ -390,9 +494,10 @@ $(d, "impSl").value = "999"; invia(d, $(d, "formImp")); await attendi(60);
 assert.equal(db.impostazioni_rischio[0].stop_loss, 50, "valori limitati");
 $(d, "nuovaPw").value = "nuovapass1"; invia(d, $(d, "formPw")); await attendi(40); assert.equal(ctx.pwCambiata, "nuovapass1");
 // =============== 4 bis) affidabilita' ===============
-assert.match(testo(d, "risultati"), /Affidabilità storica/, "badge affidabilita nelle schede");
-assert.ok(d.window.document.querySelectorAll("#risultati details").length > 0, "dettagli del perche'");
-assert.match(testo(d, "risultati"), /Compra e tieni/i);
+click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]'));
+assert.match(testo(d, "pannelloCorpo"), /Affidabilità storica/, "affidabilita' nel dettaglio");
+assert.ok($(d, "pannelloCorpo").querySelectorAll("details").length > 0, "dettagli del perche'");
+assert.match(testo(d, "pannelloCorpo"), /Tenere sempre il titolo/i); click(d, $(d, "chiudiPannello"));
 ctx.mercatoGiu = true; $(d, "impSpread").value = "0.5"; invia(d, $(d, "formImp")); await attendi(60);
 assert.equal(db.impostazioni_rischio[0].spread, 0.5, "spread salvato");
 d.window.__MA_APP.S.chiave.usi_rimasti = Math.max(d.window.__MA_APP.S.chiave.usi_rimasti, 5); db.access_keys[0].usi_rimasti = Math.max(db.access_keys[0].usi_rimasti, 5);
@@ -405,6 +510,13 @@ ctx.track = { chiusi: 40, vinti: 22, persi: 12, scaduti: 6, aperti: 3, rendiment
 ctx.aggregate = [{ tipo: "trend", titoli: 30, vinti: 300, persi: 250, scaduti: 150 }];
 click(d, $(d, "btnAggiornaAff")); await finche(() => /Obiettivo raggiunto/.test(testo(d, "boxTrack")), "registro con dati");
 assert.match(testo(d, "boxTrack"), /22 \(55%/); assert.match(testo(d, "boxCalib"), /Migliore del riferimento/); assert.match(testo(d, "boxAggregate"), /Trend rialzista[\s\S]*30[\s\S]*700/);
+assert.match(testo(d, "boxRegistro"), /Il registro è appena iniziato/, "registro verdetti vuoto: messaggio onesto");
+ctx.registro = { dal: "2026-09-01", chiusi: 120, aperti: 30, brier: 0.22, brier_base: 0.25,
+  orizzonti: [{ orizzonte: "breve", n: 120, base_pct: 60, n_fav: 40, fav_pct: 68, n_neu: 50, neu_pct: 60, n_sfav: 30, sfav_pct: 47 }],
+  calibrazione: [{ da: 60, n: 40, dichiarato: 66, osservato: 68 }, { da: 40, n: 30, dichiarato: 45, osservato: 30 }],
+  mesi: [{ mese: "2026-09", n: 50, fav_pct: 65, sfav_pct: 50 }, { mese: "2026-10", n: 70, fav_pct: 70, sfav_pct: 44 }] };
+click(d, $(d, "btnAggiornaAff")); await finche(() => /Dopo «Favorevole»/.test(testo(d, "boxRegistro")), "registro con dati");
+assert.match(testo(d, "boxRegistro"), /68%[\s\S]*47%/); assert.match(testo(d, "boxRegistro"), /Brier score: 0,220[\s\S]*Migliore del riferimento/); assert.ok($(d, "boxRegistro").querySelector("svg"), "andamento nel tempo"); assert.match(testo(d, "boxRegistro"), /-15 punti/, "scarto di calibrazione");
 click(d, d.window.document.querySelector('#menu [data-tab="analisi"]'));
 // avviso scorte
 d.window.__MA_APP.S.chiave.usi_rimasti = 3; d.window.__MA_APP.S.chiave.usi_totali = 150; d.window.__MA_APP.renderStato();
@@ -565,3 +677,15 @@ assert.match(testo(await carica("index.html", { db: nuovoDb(), ctx: { utenti: []
 }
 
 console.log("test_frontend OK");
+
+// esporta e cancella i miei dati
+{
+  const db9 = nuovoDb(), ctx9 = { utenti: [{ id: "u9", email: "z@x.it", password: "pw" }], chiamate: [], session: { access_token: "t", user: { id: "u9", email: "z@x.it" } } };
+  db9.profiles.push({ user_id: "u9", username: "zeta", email: "z@x.it" });
+  const dz = await carica("index.html", { db: db9, ctx: ctx9 }); await attendi(80);
+  click(dz, $(dz, "btnEsporta")); await finche(() => ctx9.esportato, "esporta"); await attendi(20); assert.match(testo(dz, "msgDati"), /File scaricato/);
+  ctx9.conferma = false; click(dz, $(dz, "btnElimina")); await attendi(30); assert.ok(!ctx9.eliminato, "senza conferma non cancella");
+  ctx9.conferma = true; click(dz, $(dz, "btnElimina")); await finche(() => ctx9.eliminato, "cancella"); await attendi(30);
+  assert.ok(!$(dz, "vistaAuth").classList.contains("hidden"), "dopo la cancellazione si torna al login");
+  assert.deepEqual(dz.window.errori, []);
+}

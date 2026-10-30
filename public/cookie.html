@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="it" class="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cookie policy</title>
+<link rel="icon" href="icon.svg?v=3" type="image/svg+xml">
+<link rel="stylesheet" href="stile.css">
+<script src="tema.js"></script>
+<script src="config.js"></script>
+</head>
+<body>
+<div class="wrap legal">
+<p class="no-print"><a href="index.html">← Torna al servizio</a></p>
+<h1>Cookie policy</h1>
+<p class="muted">Ultimo aggiornamento: <span data-cfg="ULTIMO_AGGIORNAMENTO_LEGALE"></span></p>
+<div class="nota">Testo-base da far rivedere da un professionista prima della vendita al pubblico.</div>
+<h2>Cosa usa il servizio</h2>
+<p>Il servizio <b>non usa cookie di profilazione, di marketing né strumenti di analisi di terze parti</b>. Usa solo l'archiviazione locale del browser (localStorage), strettamente necessaria al funzionamento o richiesta da te:</p>
+<table><thead><tr><th>Voce</th><th>A cosa serve</th><th>Durata</th></tr></thead><tbody>
+<tr><td>Sessione di accesso (fornitore di autenticazione)</td><td>Mantenere l'accesso</td><td>Finché non esci</td></tr>
+<tr><td>Ultima analisi</td><td>Mostrare subito i risultati all'apertura</td><td>Finché non la cancelli</td></tr>
+<tr><td>Preferiti, filtri, orizzonte, tema, onboarding</td><td>Ricordare le tue scelte</td><td>Finché non le cancelli</td></tr>
+</tbody></table>
+<p>Essendo strumenti tecnici, non richiedono consenso preventivo. Puoi cancellarli dalle impostazioni del browser; uscendo dall'account dovrai accedere di nuovo.</p>
+<p>I fornitori che servono il sito (hosting, database) possono registrare log tecnici essenziali (indirizzo IP, orario) per sicurezza e funzionamento.</p>
+<p class="muted">Se in futuro verranno introdotti strumenti di misurazione o marketing, questa informativa sarà aggiornata e verrà chiesto il consenso.</p>
+</div>
+<script src="comune.js"></script>
+<script>document.querySelectorAll("[data-cfg]").forEach(function(e){e.textContent=(window.CONFIG||{})[e.getAttribute("data-cfg")]||"";});</script>
+</body>
+</html>

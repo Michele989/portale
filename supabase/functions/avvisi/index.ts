@@ -13,6 +13,7 @@ import { creaDati, ErroreServizio } from "../_shared/dati.ts";
 import { costruisciEmail, eseguiAvvisi } from "../_shared/avvisi.ts";
 import type { Deps } from "../_shared/avvisi.ts";
 import { inviaEmail } from "../_shared/email.ts";
+import { jobInRitardo, testoReport } from "../_shared/sorveglianza.ts";
 
 const env = (k: string, d = "") => Deno.env.get(k) ?? d;
 const sb = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
@@ -69,6 +70,26 @@ Deno.serve(async (req: Request) => {
   }
 
   const prova = body.prova === true;
+
+  // Sorveglianza per l'amministratore (solo se ADMIN_EMAIL e' impostata): job notturno fermo, report mensile
+  const adminMail = env("ADMIN_EMAIL");
+  if (adminMail && !prova) {
+    try {
+      const adesso = new Date();
+      const { data: ss } = await sb.rpc("stato_servizio");
+      if (jobInRitardo(ss && ss.ultima_run ? ss.ultima_run.quando : null, adesso)) {
+        await sb.rpc("scrivi_log", { p_livello: "errore", p_componente: "sorveglianza", p_messaggio: "Il caricamento notturno dei dati non gira da oltre 30 ore" });
+        await inviaEmail(mailCfg, { a: adminMail, oggetto: "[" + nome + "] ATTENZIONE: aggiornamento dati fermo", testo: "Il caricamento notturno dei prezzi non risulta eseguito da oltre 30 ore. Controlla le funzioni e la chiave Twelve Data (vedi pagina Stato del servizio).", html: "<p>Il caricamento notturno dei prezzi non risulta eseguito da oltre 30 ore. Controlla le funzioni e la chiave Twelve Data (vedi pagina Stato del servizio).</p>" });
+      }
+      if (adesso.getUTCDate() === 1) {
+        const mese = new Date(Date.UTC(adesso.getUTCFullYear(), adesso.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+        const { data: righe } = await sb.rpc("report_mensile", { p_mese: mese + "-01" });
+        const { data: decl } = await sb.from("modelli_declassati").select("modello, orizzonte");
+        const t = testoReport(righe || [], mese, decl || []);
+        await inviaEmail(mailCfg, { a: adminMail, oggetto: t.oggetto, testo: t.testo, html: "<pre style=\"font-family:inherit;white-space:pre-wrap\">" + t.testo.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</pre>" });
+      }
+    } catch (_e) { /* la sorveglianza non deve bloccare gli avvisi ai clienti */ }
+  }
   const deps: Deps = {
     destinatari: async () => { const { data } = await sb.rpc("avvisi_destinatari"); return data || []; },
     recenti: async () => { const { data } = await sb.rpc("avvisi_recenti"); return data || []; },

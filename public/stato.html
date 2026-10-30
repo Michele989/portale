@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="it" class="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stato del servizio</title>
+<link rel="icon" href="icon.svg?v=3" type="image/svg+xml">
+<link rel="stylesheet" href="stile.css">
+<script src="tema.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="comune.js"></script>
+</head>
+<body>
+<div class="wrap legal">
+<p><a href="index.html">← Torna al servizio</a> · <a href="registro.html">Affidabilità reale</a></p>
+<h1>Stato del servizio</h1>
+<div id="contenuto" class="muted">Caricamento…</div>
+<p class="muted">I prezzi sono aggiornati ogni notte dopo la chiusura dei mercati USA. Nel fine settimana e nei festivi non ci sono nuovi dati.</p>
+</div>
+<script>
+(async function () {
+  var c = document.getElementById("contenuto"), esc = MA.esc;
+  if (!MA.configurato()) { c.textContent = "Servizio non configurato."; return; }
+  MA.init();
+  var r = await MA.sb.rpc("stato_servizio");
+  if (r.error || !r.data) { c.textContent = "Stato non disponibile al momento."; return; }
+  var s = r.data, run = s.ultima_run, ore = run ? (Date.now() - new Date(run.quando).getTime()) / 3.6e6 : null;
+  var gg = new Date().getUTCDay(), weekend = gg === 0 || gg === 6 || gg === 1;
+  var ok = run && (ore < 30 || weekend) && Number(s.errori_24h) < 20;
+  var h = '<div class="' + (ok ? "nota" : "allarme") + '"><b>' + (ok ? "✓ Tutto regolare" : "⚠ Possibili ritardi") + "</b>" + (ok ? "" : ": l'aggiornamento dei dati potrebbe essere in ritardo.") + "</div>";
+  h += '<div class="kv"><span>Ultimo aggiornamento dati</span><span>' + (run ? MA.data(run.quando, true) + " (" + Math.round(ore) + " ore fa)" : "n/d") + "</span>" +
+    "<span>Titoli in archivio</span><span>" + s.titoli_in_cache + "</span><span>Aggiornati nelle ultime 24 ore</span><span>" + s.titoli_aggiornati_24h + "</span>" +
+    "<span>Ultima passata: scaricati / errori / dati incerti</span><span>" + (run ? run.ok + " / " + run.errori + " / " + run.incerti : "n/d") + "</span>" +
+    "<span>Errori nelle ultime 24 ore</span><span>" + s.errori_24h + "</span></div>";
+  if (s.modelli_declassati && s.modelli_declassati.length) h += '<div class="nota"><b>Modelli declassati:</b> ' + s.modelli_declassati.map(function (m) { return esc(m.modello) + " (" + esc(m.orizzonte) + ", dal " + MA.data(m.dal) + ")"; }).join(", ") + ". Le loro percentuali dichiarate non hanno rispecchiato la realtà negli ultimi 2 mesi, quindi i loro verdetti sono limitati.</div>";
+  c.className = ""; c.innerHTML = h;
+})();
+</script>
+</body>
+</html>

@@ -55,4 +55,19 @@ assert.deepEqual(A.espandi(A.comprimi(b)), b.map(x => ({ ...x })));
 const p = A.daTwelveData([{ datetime: "2026-10-08", high: "10", low: "9", close: "9.5", volume: "100" }, { datetime: "x", close: "abc" }, { datetime: "2026-10-07", high: "10", low: "9", close: "9.4" }]);
 assert.equal(p.length, 2); assert.equal(p[1].v, 0);
 assert.equal(A.limita("abc", 1, 5, 3), 3); assert.equal(A.limita(99, 1, 5, 3), 5);
+// ---- FASE 1: solo barre chiuse (niente barra del giorno in corso)
+{
+  const mk = (d) => ({ d, h: 10, l: 9, c: 9.5, v: 1000 });
+  const barre = [mk("2026-10-29"), mk("2026-10-28"), mk("2026-10-27")]; // dal piu' recente
+  const t = (iso) => A.soloBarreChiuse(barre, new Date(iso)).map((b) => b.d);
+  assert.deepEqual(t("2026-10-29T15:00:00Z"), ["2026-10-28", "2026-10-27"], "seduta in corso: barra scartata");
+  assert.deepEqual(t("2026-10-29T20:00:00Z"), ["2026-10-28", "2026-10-27"], "16:00 a New York: ancora aperta/non definitiva");
+  assert.deepEqual(t("2026-10-29T21:00:00Z"), ["2026-10-29", "2026-10-28", "2026-10-27"], "17:00 a New York: chiusa");
+  assert.deepEqual(A.soloBarreChiuse([mk("2026-10-30"), mk("2026-10-29")], new Date("2026-10-31T12:00:00Z")).map((b) => b.d), ["2026-10-30", "2026-10-29"], "sabato: l'ultima seduta e' chiusa");
+  assert.deepEqual(A.soloBarreChiuse(barre, new Date("2026-12-02T21:00:00Z")).map((b) => b.d), ["2026-10-29", "2026-10-28", "2026-10-27"], "date lontane: tutte chiuse");
+  assert.deepEqual(A.soloBarreChiuse([mk("2026-12-02"), mk("2026-12-01")], new Date("2026-12-02T21:00:00Z")).map((b) => b.d), ["2026-12-01"], "ora solare: 16:00 a New York non e' ancora chiusa");
+  assert.deepEqual(A.soloBarreChiuse([mk("2026-12-02"), mk("2026-12-01")], new Date("2026-12-02T22:00:00Z")).map((b) => b.d), ["2026-12-02", "2026-12-01"]);
+  assert.deepEqual(A.soloBarreChiuse([mk("2026-11-05"), mk("2026-10-28")], new Date("2026-10-29T15:00:00Z")).map((b) => b.d), ["2026-10-28"], "barra futura scartata");
+  assert.deepEqual(A.soloBarreChiuse([], new Date()), []);
+}
 console.log("test_analisi OK", { trend: ns, so: so.n, stato: r.stato });

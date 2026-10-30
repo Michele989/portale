@@ -18,6 +18,30 @@
 
 <div class="nota"><b>In una frase:</b> il servizio non prevede i prezzi. Misura la situazione tecnica di un titolo con regole fisse e dice quanto, in passato, situazioni simili sono andate bene, con il margine di errore e i controlli che dicono se quel dato è credibile.</div>
 
+
+<h2>Come si arriva al verdetto (versione 2.0 del modello)</h2>
+<ul>
+<li><b>Vantaggio sul solito</b>: si confronta la % di rialzi dopo giorni simili a oggi con la % di rialzi in un periodo qualsiasi della stessa durata. «Favorevole» richiede un vantaggio positivo il cui estremo inferiore (intervallo al 95%) supera il «solito»: un titolo che sale sempre non è favorevole, sale e basta.</li>
+<li><b>Verifica fuori campione</b>: il vantaggio calcolato fino a 12 mesi fa viene controllato sugli ultimi 12 mesi, che non erano usati per calcolarlo. Se sparisce, l'affidabilità scende; «alta» richiede la conferma.</li>
+<li><b>Correzione verso la media del gruppo</b> (empirical Bayes): con pochi periodi indipendenti la percentuale del singolo titolo pesa meno di quella del gruppo di titoli simili, per non inseguire la fortuna.</li>
+<li><b>Mercato debole</b>: se l'indice generale (SPY) è sotto la media a 200 giorni, i verdetti favorevoli basati sul trend diventano neutri.</li>
+<li><b>Trimestrale in arrivo</b>: dove il fornitore dei dati la comunica, l'affidabilità non supera «media». Con il piano dati gratuito questa informazione potrebbe non essere disponibile.</li>
+<li><b>Robustezza</b>: il segnale viene ricalcolato con la media a 45 e 55 giorni e con RSI 30 e 40; se cambia in due casi su quattro è «fragile» e l'affidabilità scende.</li>
+<li><b>Dati incerti</b>: anomalie nei prezzi o differenze oltre il 2% rispetto a una seconda fonte (quando raggiungibile) abbassano l'affidabilità e tengono il titolo fuori dai primi posti.</li>
+<li><b>Punteggio 0–100</b>: vantaggio sul solito (fino a 40) + criteri soddisfatti (25) + rendimento tipico (15) + affidabilità (10) + conferme di gruppo e ultimi 12 mesi (10), meno penalità (mercato debole −10, fragile −8, trimestrale −5). Nel dettaglio di ogni titolo vedi come è composto.</li>
+<li><b>Rendimenti netti</b>: in alternativa ai lordi si mostrano al netto di costi (0,3%) e imposta (26% sul solo guadagno). Il cambio euro/dollaro non è incluso.</li>
+<li><b>Controllo continuo</b>: ogni giorno i verdetti vengono registrati con la probabilità dichiarata; a esito avvenuto si confrontano con la realtà (<a href="registro.html">pagina pubblica</a>). Se un modello per 2 mesi si discosta di oltre 10 punti da quanto dichiarava, viene declassato automaticamente. Ogni verdetto porta la versione del modello che lo ha prodotto.</li>
+</ul>
+
+<h2>Limiti da conoscere</h2>
+<ul>
+<li><b>Survivorship bias</b>: il catalogo contiene titoli che esistono oggi; mancano quelli falliti o usciti dal mercato. Le percentuali storiche tendono quindi a essere un po' ottimistiche.</li>
+<li><b>Pochi periodi indipendenti</b>: sull'orizzonte di un anno lo storico ne contiene pochi; per questo l'affidabilità è quasi sempre bassa o media.</li>
+<li><b>I titoli si muovono insieme</b>: la precisione del gruppo è inferiore a quella apparente.</li>
+<li><b>Dati di terzi</b>: i prezzi arrivano da un fornitore esterno e possono contenere errori o ritardi.</li>
+<li>Nessuna di queste informazioni è una previsione, una raccomandazione o un consiglio personalizzato.</li>
+</ul>
+
 <h2>1. Le regole (fisse, non ottimizzate)</h2>
 <ul>
 <li><b>Trend rialzista confermato</b>: prezzo sopra la media a 50 giorni (SMA50) e a 200 (SMA200), RSI tra 50 e 70, ADX ≥ 20, chiusure sopra la SMA50 per 3 giorni di fila e volume non inferiore alla media.</li>
@@ -34,7 +58,7 @@
 <li><b>Margine di errore</b>: intervallo di confidenza al 95% (metodo di Wilson), corretto anche con pochi casi o con 0% e 100%.</li>
 <li><b>Fuori campione</b>: gli ultimi 12 mesi sono mostrati a parte. Se vanno molto peggio del passato, l'affidabilità scende.</li>
 <li><b>Confronto con il caso</b>: gli stessi calcoli con ingressi casuali (stessa frequenza, stessi costi). Se il segnale non fa nettamente meglio, non ha un vantaggio reale: spesso un buon risultato dipende solo dal fatto che il titolo saliva già.</li>
-<li><b>Confronto con «compra e tieni»</b>, calo massimo (drawdown), rendimento medio per operazione e tenuta anno per anno.</li>
+<li><b>Confronto con «tenere sempre il titolo»</b>, calo massimo (drawdown), rendimento medio per operazione e tenuta anno per anno.</li>
 </ul>
 
 <h2>3. Il livello di affidabilità</h2>
@@ -49,7 +73,7 @@
 <h2>4. Controlli sui dati e sul mercato</h2>
 <ul>
 <li>Dati vecchi, buchi nello storico, date duplicate, prezzi incoerenti o salti anomali (possibili frazionamenti non corretti) vengono segnalati; nei casi gravi nulla viene registrato e l'affidabilità è «bassa».</li>
-<li><b>Filtro di mercato</b>: se l'indice generale (SPY) è sotto la media a 200 giorni, i segnali di acquisto sono accompagnati da un avviso di rischio più alto.</li>
+<li><b>Filtro di mercato</b>: se l'indice generale (SPY) è sotto la media a 200 giorni, i segnali di trend rialzista vengono declassati (un «favorevole» diventa «neutro») e accompagnati da un avviso di rischio più alto.</li>
 </ul>
 
 <h2>5. Il registro reale dei segnali</h2>
@@ -58,9 +82,11 @@
 <h2>5 bis. Lo studio per orizzonte (breve, medio, lungo)</h2>
 <p>Per ogni titolo il servizio calcola tre studi separati: <b>breve</b> (21 giorni di borsa, circa 1 mese), <b>medio</b> (63 giorni, circa 3 mesi) e <b>lungo</b> (252 giorni, circa 1 anno). Tu scegli l'orizzonte che ti interessa; la classifica e la scheda mostrano quello.</p>
 <ul>
+<li><b>Due modelli, un solo verdetto</b>: per un titolo in forte ribasso (RSI sotto 35 e prezzo sotto la media a 50 giorni) il verdetto viene dal modello <i>Rimbalzo</i>, con criteri propri (distanza dalla media, media a 200 giorni ancora in salita, volume, RSI che risale) e storico dei ribassi simili; per tutti gli altri dal modello <i>Trend</i>. Un titolo non ha mai due verdetti contrastanti.</li>
+<li><b>Solo barre chiuse</b>: i dati usano solo sedute giornaliere concluse (dopo le 16:30 di New York); la giornata in corso, con prezzi e volumi parziali, viene scartata. Ogni scheda mostra la data dei dati.</li>
 <li><b>Quattro criteri</b> semplici e dichiarati per ogni orizzonte (es. per il medio: prezzo sopra la media a 50 giorni, media a 50 sopra quella a 200, ultimi 3 mesi positivi, ADX almeno 20). Ogni criterio vero vale 1 punto.</li>
 <li><b>Studio storico</b>: per ogni giorno dello storico si guarda il rendimento ottenuto dopo 21, 63 o 252 giorni. Si riportano la % di casi positivi, la variazione mediana, la fascia del 80% centrale dei casi e il peggior caso. Si usano di preferenza i giorni «simili a oggi» (stessa configurazione di indicatori); se sono troppo pochi si usa tutto lo storico.</li>
-<li><b>Periodi indipendenti</b>: le finestre si sovrappongono, quindi un anno di storico non vale 250 osservazioni indipendenti. Si conta quanti periodi non sovrapposti ci sono davvero: l'affidabilità dello studio dipende da questo numero (meno di 4 = insufficiente, 4-7 bassa, 8-19 media, 20 o più alta). Sul lungo termine i periodi sono pochi per costruzione.</li>
+<li><b>Periodi indipendenti</b>: le finestre si sovrappongono, quindi un anno di storico non vale 250 osservazioni indipendenti. Si conta quanti periodi non sovrapposti ci sono davvero: l'affidabilità dello studio dipende da questo numero: meno di 4 = insufficiente, da 4 a 19 = bassa, da 20 in su = media. <b>Alta</b> è rara e va meritata: servono almeno 80 periodi indipendenti <i>e</i> un intervallo al 95% largo al massimo 15 punti. Sul lungo termine i periodi sono pochi per costruzione, quindi di norma non arriva ad «alta».</li>
 <li><b>Verdetto</b>: <i>favorevole</i> se almeno 3 criteri su 4 sono veri e, in passato, il prezzo è salito in oltre il 55% dei casi con mediana positiva; <i>sfavorevole</i> se al massimo 1 criterio è vero senza uno storico chiaramente positivo, oppure se lo storico è negativo (mediana negativa e meno del 45% di casi positivi); altrimenti <i>neutro</i>.</li>
 <li><b>Confronto con il gruppo</b>: lo stesso studio storico viene fatto ogni notte su tutti i titoli del catalogo della stessa categoria (ETF, Crescita, Azioni) e sommato. La scheda mostra come sono andati, dopo 21, 63 o 252 giorni, i titoli che si trovavano nella stessa situazione di oggi. Serve a due cose: un verdetto «favorevole» resta tale solo se anche il gruppo lo conferma (pochi periodi di un solo titolo possono essere frutto del caso), e con un campione di gruppo ampio (almeno 30 titoli e 100 periodi) il livello di affidabilità dello studio sale di un gradino. I titoli però si muovono in parte insieme (mercato, settore), quindi la precisione reale del gruppo è inferiore a quella apparente: più dati rendono la statistica più stabile, non rendono il futuro prevedibile.</li>
 <li><b>Rialzo che ti interessa</b>: scegli una percentuale (per esempio +20%) e il servizio calcola in quanti casi, in passato, il prezzo era salito almeno di quella percentuale alla fine dell'orizzonte scelto. Come nota si indica anche quanti hanno toccato quella soglia in un momento qualsiasi del periodo (anche se poi è sceso). Il numero va letto insieme al margine di errore, ai periodi indipendenti e al confronto con il gruppo: è una frequenza osservata sul passato, non una probabilità garantita per il futuro; più alto è il rialzo richiesto, meno casi ci sono e meno è stabile.</li>

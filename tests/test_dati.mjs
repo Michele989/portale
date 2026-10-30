@@ -30,6 +30,18 @@ sb = creaSb({ dati: compatta(100), aggiornato_il: ore(2) }); chiamate = 0; rispo
 r = await creaDati(sb, cfg).datiTitolo("AAA", false, new Date(Date.now() - 1 * 3.6e6)); assert.equal(r.scaricato, true); assert.equal(r.barre.length, 130);
 await assert.rejects(creaDati(creaSb({ dati: compatta(100), aggiornato_il: ore(2) }), cfg).datiTitolo("AAA", true, new Date(Date.now() - 1 * 3.6e6)), /non ancora aggiornato/);
 r = await creaDati(creaSb({ dati: compatta(100), aggiornato_il: ore(1) }), cfg).datiTitolo("AAA", true, new Date(Date.now() - 2 * 3.6e6)); assert.equal(r.scaricato, false);
+// FASE 1: la barra del giorno in corso (o futura) viene scartata, sia dalla cache sia dal download
+{
+  const dom = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  const conFutura = (n) => { const base = righe(n); base.unshift({ datetime: dom, open: "100", high: "101", low: "99", close: "100", volume: "3" }); return base; };
+  risposta = { values: conFutura(120) };
+  const rr = await creaDati(creaSb(null), cfg).datiTitolo("AAA");
+  assert.equal(rr.barre.length, 120, "download: barra incompleta scartata");
+  assert.notEqual(rr.barre[0].d, dom);
+  const cc = { ...A.comprimi(A.daTwelveData(conFutura(100))), v: 2 };
+  const r2 = await creaDati(creaSb({ dati: cc, aggiornato_il: ore(1) }), cfg).datiTitolo("AAA");
+  assert.equal(r2.barre.length, 100, "cache: barra incompleta scartata");
+}
 // limite al minuto: usa la cache vecchia solo se accettabile
 risposta = { code: 429, status: "error", message: "You have run out of API credits for the current minute" };
 r = await creaDati(creaSb({ dati: compatta(100), aggiornato_il: ore(10) }), cfg).datiTitolo("AAA"); assert.equal(r.barre.length, 100, "fallback su cache vecchia");

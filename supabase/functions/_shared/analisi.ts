@@ -428,6 +428,19 @@ export function valutaSegnale(
 // =========================================================================
 // QUALITA' DEI DATI E FILTRO DI MERCATO
 // =========================================================================
+// Solo barre CHIUSE: scarta la barra del giorno di borsa ancora in corso (prezzi e volume parziali,
+// es. "volume 0,01x la media"). Si ragiona sull'orario di New York: la seduta e' chiusa dopo le 16:30.
+export function soloBarreChiuse(recenti: Barra[], adesso: Date = new Date()): Barra[] {
+  if (!recenti || !recenti.length) return recenti;
+  const parti: Record<string, string> = {};
+  for (const x of new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(adesso)) parti[x.type] = x.value;
+  const oggiNY = parti.year + "-" + parti.month + "-" + parti.day;
+  const chiusa = Number(parti.hour) * 60 + Number(parti.minute) >= 16 * 60 + 30;
+  let k = 0;
+  while (k < recenti.length && (recenti[k].d > oggiNY || (recenti[k].d === oggiNY && !chiusa))) k++;
+  return k ? recenti.slice(k) : recenti;
+}
+
 export interface QualitaDati { ok: boolean; gravi: boolean; avvisi: string[] }
 
 export function controllaDati(rec: Barra[], oggi: Date = new Date()): QualitaDati {

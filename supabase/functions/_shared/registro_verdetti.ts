@@ -7,6 +7,7 @@ import type { DatiGruppo, NomeOrizzonte } from "./orizzonti.ts";
 
 export interface RigaVerdetto {
   ticker: string; orizzonte: NomeOrizzonte; data_verdetto: string; prezzo: number; verdetto: string; punteggio: number;
+  modello: string; versione: string; prob_dichiarata: number | null; vantaggio: number | null; punteggio100: number; affidabilita: string;
 }
 export interface RigaAperta { id: number; orizzonte: NomeOrizzonte; data_verdetto: string }
 export interface Chiusura { id: number; data_esito: string; rendimento: number }
@@ -15,6 +16,7 @@ export interface Chiusura { id: number; data_esito: string; rendimento: number }
 export function elaboraVerdetti(
   ticker: string, recenti: Barra[], aperti: RigaAperta[], oggi: Date = new Date(),
   gruppo?: Partial<Record<NomeOrizzonte, DatiGruppo | null>>,
+  ctx: { regimeSfavorevole?: boolean; datiIncerti?: boolean } = {},
 ): { nuovi: RigaVerdetto[]; chiusure: Chiusura[] } {
   const cron = recenti.slice().reverse();
   const nuovi: RigaVerdetto[] = [];
@@ -33,11 +35,13 @@ export function elaboraVerdetti(
   const q = controllaDati(recenti, oggi);
   if (!q.gravi) {
     const ultima = cron[cron.length - 1];
-    const studio = analizzaOrizzonti(cron, { datiOk: true, senzaVentaglio: true, gruppo });
+    const studio = analizzaOrizzonti(cron, { datiOk: true, senzaVentaglio: true, gruppo, regimeSfavorevole: ctx.regimeSfavorevole, datiIncerti: ctx.datiIncerti });
     for (const nome of Object.keys(ORIZZONTI) as NomeOrizzonte[]) {
       const s = studio[nome];
       if (!s || s.verdetto === "non_valutabile") continue;
-      nuovi.push({ ticker, orizzonte: nome, data_verdetto: ultima.d, prezzo: ultima.c, verdetto: s.verdetto, punteggio: s.punteggio });
+      nuovi.push({ ticker, orizzonte: nome, data_verdetto: ultima.d, prezzo: ultima.c, verdetto: s.verdetto, punteggio: s.punteggio,
+        modello: s.modello, versione: s.versione, prob_dichiarata: s.pShrink === null ? null : Math.round(s.pShrink * 10) / 10,
+        vantaggio: s.vantaggio === null ? null : Math.round(s.vantaggio * 10) / 10, punteggio100: s.punteggio100, affidabilita: s.affidabilita });
     }
   }
   return { nuovi, chiusure };

@@ -1,6 +1,6 @@
 // Accesso ai dati di prezzo (Twelve Data) con cache condivisa nel database.
 // Usato sia da "analizza" (richieste dei clienti) sia da "avvisi" (controllo giornaliero).
-import { comprimi, daTwelveData, espandi } from "./analisi.ts";
+import { comprimi, daTwelveData, espandi, soloBarreChiuse } from "./analisi.ts";
 import type { Barra } from "./analisi.ts";
 
 export class ErroreServizio extends Error {
@@ -16,7 +16,7 @@ export class ErroreServizio extends Error {
 }
 
 export interface ConfigDati { tdKey: string; cacheOre: number; storicoGiorni: number }
-export interface RisultatoDati { barre: Barra[]; aggiornato: string; scaricato: boolean }
+export interface RisultatoDati { barre: Barra[]; aggiornato: string; scaricato: boolean; incerti?: boolean }
 
 export function creaDati(sb: any, cfg: ConfigDati) {
   // Versione del formato salvato nella cache: 2 = storico lungo + prezzi corretti per i dividendi.
@@ -86,18 +86,18 @@ export function creaDati(sb: any, cfg: ConfigDati) {
     const versioneOk = !!cache && !!cache.dati && Number(cache.dati.v) >= VERSIONE && !cache.dati.err;
     const valida = !!cache && (!minAggiornato || quando >= minAggiornato.getTime());
     const etaOre = cache ? (Date.now() - quando) / 3.6e6 : Infinity;
-    if (cache && valida && versioneOk && etaOre < cfg.cacheOre) return { barre: espandi(cache.dati), aggiornato: cache.aggiornato_il, scaricato: false };
+    if (cache && valida && versioneOk && etaOre < cfg.cacheOre) return { barre: soloBarreChiuse(espandi(cache.dati)), aggiornato: cache.aggiornato_il, scaricato: false, incerti: !!cache.dati.inc };
     if (soloCache) throw new ErroreServizio(503, "NON_IN_CACHE", "Dato non ancora aggiornato");
     try {
       const { barre, corretti } = await scarica(ticker);
       if (barre.length < 60) throw new ErroreServizio(404, "DATI_INSUFFICIENTI", "Storico insufficiente per " + ticker);
       const ora = new Date().toISOString();
       await sb.from("price_cache").upsert({ ticker, dati: { ...comprimi(barre), v: VERSIONE, adj: corretti ? 1 : 0 }, aggiornato_il: ora });
-      return { barre, aggiornato: ora, scaricato: true };
+      return { barre: soloBarreChiuse(barre), aggiornato: ora, scaricato: true };
     } catch (e) {
       // Problema temporaneo del servizio dati: uso l'ultima copia salvata (solo se accettabile)
       if (cache && valida && !(cache.dati && cache.dati.err) && e instanceof ErroreServizio && ["LIMITE_MINUTO", "LIMITE_GIORNALIERO", "ERRORE_DATI"].includes(e.codice)) {
-        return { barre: espandi(cache.dati), aggiornato: cache.aggiornato_il, scaricato: false };
+        return { barre: soloBarreChiuse(espandi(cache.dati)), aggiornato: cache.aggiornato_il, scaricato: false, incerti: !!cache.dati.inc };
       }
       throw e;
     }
@@ -109,5 +109,15 @@ export function creaDati(sb: any, cfg: ConfigDati) {
     await sb.from("price_cache").upsert({ ticker, dati: { b: [], v: VERSIONE, err: 1 }, aggiornato_il: new Date().toISOString() });
   }
 
-  return { datiTitolo, scarica, segnaErrore };
+  // Segna (o toglie) l'etichetta "dati incerti" sulla copia salvata: il controllo incrociato con la seconda fonte
+  // la imposta di notte; viene azzerata a ogni nuovo download.
+  async function segnaIncerti(ticker: string, incerti: boolean) {
+    const { data: c } = await sb.from("price_cache").select("dati").eq("ticker", ticker).maybeSingle();
+    if (!c || !c.dati) return;
+    const dati = { ...c.dati };
+    if (incerti) dati.inc = 1; else delete dati.inc;
+    await sb.from("price_cache").update({ dati }).eq("ticker", ticker);
+  }
+
+  return { datiTitolo, scarica, segnaErrore, segnaIncerti };
 }

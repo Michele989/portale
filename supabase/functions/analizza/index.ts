@@ -9,7 +9,8 @@ import { opzioniCors, risposta, tokenDa } from "../_shared/http.ts";
 import { analizzaSerie, limita, statisticheStandard, statoMercato, valutaSegnale } from "../_shared/analisi.ts";
 import { creaDati, ErroreServizio } from "../_shared/dati.ts";
 import { leggiGruppo } from "../_shared/gruppo.ts";
-import { analizzaOrizzonti } from "../_shared/orizzonti.ts";
+import { analizzaOrizzonti, applicaDeclassamenti } from "../_shared/orizzonti.ts";
+import { mercatoDebole } from "../_shared/provider.ts";
 import type { Barra } from "../_shared/analisi.ts";
 
 const sb = createClient(
@@ -76,19 +77,29 @@ Deno.serve(async (req: Request) => {
   if (!chiave) return risposta({ ok: false, codice: "NESSUNA_CHIAVE", errore: "Accesso non ancora abilitato: comunica il tuo username all'amministratore." }, 403);
   if (chiave.stato !== "attiva") return risposta({ ok: false, codice: "DISATTIVATA", errore: "La tua chiave e' disattivata. Contatta l'amministratore." }, 403);
   if (chiave.scade_il && new Date(chiave.scade_il).getTime() <= Date.now()) return risposta({ ok: false, codice: "SCADUTA", errore: "La tua chiave e' scaduta. Contatta l'amministratore per rinnovarla." }, 403);
-  if (chiave.usi_rimasti <= 0) return risposta({ ok: false, codice: "USI_ESAURITI", errore: "Hai esaurito gli usi. Contatta l'amministratore per ricaricare." }, 403);
+  
+  // limite di velocita': massimo 30 analisi al minuto per utente (protegge il servizio dati)
+  const { data: okLimite } = await sb.rpc("controlla_limite", { p_chiave: "analizza:" + userId, p_max: 30, p_secondi: 60 });
+  if (okLimite === false) return risposta({ ok: false, codice: "TROPPE_RICHIESTE", errore: "Troppe richieste ravvicinate: attendi un minuto e riprova." }, 429);
 
-  const { data: rimasti, error: errUso } = await sb.rpc("consuma_uso", { p_user: userId });
-  if (errUso || rimasti === null || rimasti < 0) return risposta({ ok: false, codice: "USI_ESAURITI", errore: "Nessun uso disponibile." }, 403);
-
-  // 2) Dati e analisi; in caso di errore l'uso viene rimborsato
+  // 2) Dati: con usi esauriti si usa solo la copia salvata (nessun download a nostro carico)
+  let consumato = false, dataBarra = "";
   try {
-    const { barre, aggiornato } = await datiTitolo(ticker);
+    const esauriti = chiave.usi_rimasti <= 0;
+    let r;
+    try { r = await datiTitolo(ticker, esauriti); }
+    catch (e) { if (esauriti && e instanceof ErroreServizio && e.codice === "NON_IN_CACHE") return risposta({ ok: false, codice: "USI_ESAURITI", errore: "Hai esaurito gli usi. Contatta l'amministratore per ricaricare." }, 403); throw e; }
+    const { barre, aggiornato } = r;
+    dataBarra = barre[0] ? barre[0].d : "";
+    // 3) Uso: stesso titolo + stessa data dell'ultima barra + stesso utente = gia' pagata, nessun uso scalato
+    const { data: cons, error: errUso } = await sb.rpc("consuma_analisi", { p_user: userId, p_ticker: ticker, p_data: dataBarra });
+    if (errUso || !cons || cons.usi < 0) return risposta({ ok: false, codice: "USI_ESAURITI", errore: "Nessun uso disponibile." }, 403);
+    const rimasti = cons.usi as number; consumato = !cons.riuso;
     // Filtro di mercato: indice generale (SPY). Se non disponibile, l'analisi prosegue senza.
-    let mercato = null;
+    let mercato = null, regime = false;
     if (ticker !== "SPY") {
-      try { mercato = statoMercato((await datiTitolo("SPY")).barre, "SPY"); } catch (_e) { mercato = null; }
-    }
+      try { const spy = (await datiTitolo("SPY", esauriti)).barre; mercato = statoMercato(spy, "SPY"); regime = mercatoDebole(spy); } catch (_e) { mercato = null; }
+    } else { regime = mercatoDebole(barre); }
     const analisi = analizzaSerie(barre, opz, { mercato: ticker === "SPY" ? statoMercato(barre, "SPY") : mercato });
     if (!analisi) throw new ErroreServizio(404, "DATI_INSUFFICIENTI", "Storico insufficiente per " + ticker);
     await registra(ticker, barre, analisi); // registro segnali e statistiche: non blocca mai l'analisi
@@ -96,12 +107,17 @@ Deno.serve(async (req: Request) => {
     let orizzonti = null;
     try {
       const { gruppo, dati } = await leggiGruppo(sb, ticker, barre);
-      orizzonti = analizzaOrizzonti(barre.slice().reverse(), { datiOk: !analisi.qualita.gravi, gruppo: dati, nomeGruppo: NOMI_GRUPPO[gruppo] || gruppo });
+      orizzonti = analizzaOrizzonti(barre.slice().reverse(), { datiOk: !analisi.qualita.gravi, gruppo: dati, nomeGruppo: NOMI_GRUPPO[gruppo] || gruppo, regimeSfavorevole: regime, datiIncerti: !!r.incerti });
+      const { data: decl } = await sb.from("modelli_declassati").select("modello, orizzonte");
+      if (orizzonti && decl && decl.length) orizzonti = applicaDeclassamenti(orizzonti, decl);
     } catch (_e) { orizzonti = null; }
-    return risposta({ ok: true, ticker, ...analisi, orizzonti, dati_del: aggiornato, usi_rimasti: rimasti });
+    return risposta({ ok: true, ticker, ...analisi, orizzonti, dati_del: aggiornato, usi_rimasti: rimasti, riuso: !consumato, usi_risparmiati: cons.risparmiati ?? 0, regime_debole: regime, versione_modello: orizzonti ? orizzonti.breve.versione : null });
   } catch (e) {
-    const { data: ripristinati } = await sb.rpc("rimborsa_uso", { p_user: userId });
-    const usi = typeof ripristinati === "number" && ripristinati >= 0 ? ripristinati : rimasti + 1;
+    let usi = chiave.usi_rimasti;
+    if (consumato) {
+      const { data: ripristinati } = await sb.rpc("annulla_analisi", { p_user: userId, p_ticker: ticker, p_data: dataBarra });
+      usi = typeof ripristinati === "number" && ripristinati >= 0 ? ripristinati : chiave.usi_rimasti;
+    }
     if (e instanceof ErroreServizio) {
       return risposta({ ok: false, codice: e.codice, errore: e.message, usi_rimasti: usi, ...e.extra }, e.stato);
     }

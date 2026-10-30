@@ -136,3 +136,10 @@ Il precaricamento notturno scarica anche tutti i 420 titoli del catalogo (`_shar
 ## Ricerca: cronologia e filtro nella classifica
 - Cliccando sul campo «Cerca per nome o ticker» (vuoto) compaiono le ultime 15 ricerche, con il tasto «Cancella cronologia» (salvate solo nel browser).
 - Sopra la classifica c'è una casella «Cerca» unica per favorevoli, neutri e sfavorevoli: filtra per ticker o nome e mostra tutti i risultati; «Azzera» ripristina.
+
+## Novità (fasi 2–5)
+- Nuovo `schema.sql`: rieseguirlo nel SQL Editor di Supabase (è ripetibile), poi INSTALLA_FUNZIONI.bat.
+- Segreti facoltativi: `ADMIN_EMAIL` (allarme e report mensile), `CONTROLLO_INCROCIATO=0` (spegne la seconda fonte).
+- Nuovi file sito: glossario.js, registro.js/html, stato.html, cookie.html.
+- Test: `cd tests && npm install && npm test`; browser vero: `npm run e2e`. Su GitHub girano a ogni push (test.yml).
+- Documenti: AUDIT.md, SICUREZZA.md, COLLAUDO.md.

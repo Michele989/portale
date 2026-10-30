@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="it" class="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Affidabilità reale dei verdetti</title>
+<link rel="icon" href="icon.svg?v=3" type="image/svg+xml">
+<link rel="stylesheet" href="stile.css">
+<script src="tema.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="comune.js"></script>
+<script src="registro.js"></script>
+</head>
+<body>
+<div class="wrap legal">
+<p><a href="index.html">← Torna al servizio</a> · <a href="stato.html">Stato del servizio</a></p>
+<h1>Affidabilità reale dei verdetti</h1>
+<p class="muted">Ogni giorno il servizio registra il verdetto di ogni titolo con la probabilità dichiarata e il prezzo. Quando passa l'orizzonte (1, 3 o 12 mesi) registra cosa è successo davvero. Questa pagina è pubblica e mostra solo dati aggregati, anche quando sono brutti.</p>
+<div id="contenuto" class="muted">Caricamento…</div>
+<p class="muted">Sono statistiche su un numero limitato di casi: non sono previsioni né consigli. Vedi <a href="metodo.html">Metodologia</a>.</p>
+</div>
+<script>
+(async function () {
+  var c = document.getElementById("contenuto");
+  if (!MA.configurato()) { c.textContent = "Servizio non configurato."; return; }
+  MA.init();
+  var r = await MA.sb.rpc("registro_pubblico");
+  if (r.error || !r.data) { c.textContent = "Dati non disponibili al momento."; return; }
+  c.className = ""; c.innerHTML = MA_REGISTRO.html(r.data);
+})();
+</script>
+</body>
+</html>
