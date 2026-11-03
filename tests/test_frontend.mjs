@@ -147,7 +147,7 @@ function creaFetch(db, ctx) {
 // ---------- caricamento pagina ----------
 async function carica(file, { db, ctx, config = true, pre = null }) {
   let html = leggi(file).replace(/<script src="https:\/\/cdn[^>]*><\/script>/, "");
-  let cfg = leggi("config.js").replace("INSERISCI_URL_PROGETTO_SUPABASE", config ? "https://prova.supabase.co" : "INSERISCI").replace("INSERISCI_ANON_KEY_SUPABASE", config ? "k".repeat(40) : "x").replace("PAUSA_MS: 7700", "PAUSA_MS: 0");
+  let cfg = leggi("config.js").replace(/SUPABASE_URL:\s*"[^"]*"/, 'SUPABASE_URL: "' + (config ? "https://prova.supabase.co" : "INSERISCI") + '"').replace(/SUPABASE_ANON_KEY:\s*"[^"]*"/, 'SUPABASE_ANON_KEY: "' + (config ? "k".repeat(40) : "x") + '"').replace(/PAUSA_MS:\s*\d+/, "PAUSA_MS: 0");
   html = html.replace('<script src="config.js"></script>', "<script>" + cfg + "</script>").replace('<script src="comune.js"></script>', "<script>" + leggi("comune.js") + "</script>").replace('<script src="catalogo.js"></script>', "<script>" + leggi("catalogo.js") + "</script>").replace('<script src="glossario.js"></script>', "<script>" + leggi("glossario.js") + "</script>").replace('<script src="registro.js"></script>', "<script>" + leggi("registro.js") + "</script>");
   const dom = new JSDOM(html, {
     runScripts: "dangerously", url: "https://prova.netlify.app/" + file, pretendToBeVisual: true,
@@ -219,6 +219,20 @@ const righe = () => [...DOC.querySelectorAll("#boxClassifica .riga[data-t]")].ma
 assert.ok(righe().length >= 10, "righe in classifica: " + righe().length);
 assert.equal(DOC.querySelectorAll("#risultati .card[data-card]").length, 0, "niente piu' schede doppione: una sola classifica");
 assert.match(testo(d, "boxStato"), /Ti restano 7 usi su 20/, "contatore aggiornato: " + testo(d, "boxStato"));
+// ANALISI DI UN SOLO TITOLO: errore chiaro, poi analisi con pannello aperto, senza toccare la lista
+{
+  const lista0 = db.watchlist.length;
+  $(d, "cercaUno").value = "zzzz"; $(d, "cercaUno").dispatchEvent(new d.window.Event("input", { bubbles: true })); invia(d, $(d, "formUno"));
+  await finche(() => /non trovato/i.test($(d, "msgUno").textContent), "errore ticker", 8000);
+  $(d, "cercaUno").value = "Vanguard S&P"; $(d, "cercaUno").dispatchEvent(new d.window.Event("input", { bubbles: true }));
+  assert.ok($(d, "suggUno").querySelectorAll("[data-u]").length >= 1, "suggerimenti per nome");
+  $(d, "cercaUno").value = "XOM"; invia(d, $(d, "formUno"));
+  await finche(() => !$(d, "pannello").classList.contains("hidden"), "pannello aperto", 8000);
+  assert.match(d.window.document.getElementById("pannelloTitolo").textContent, /XOM/);
+  assert.equal(db.watchlist.length, lista0, "non aggiunto alla lista");
+  assert.ok($(d, "btnUnoAgg"), "bottone aggiungi alla lista");
+  d.window.document.getElementById("chiudiPannello").dispatchEvent(new d.window.MouseEvent("click", { bubbles: true }));
+}
 // FASE 2: riga compatta con verdetto, punteggio, vantaggio, affidabilita', sparkline e badge
 {
   for (const r of DOC.querySelectorAll("#boxClassifica .riga[data-t]")) {
@@ -615,7 +629,7 @@ for (const f of ["termini.html", "privacy.html", "istruzioni.html", "metodo.html
 {
   const TOK = "123e4567-e89b-12d3-a456-426614174000", chiam = [];
   const mk = async (url, risposta) => {
-    const html = leggi("disiscrizione.html").replace('<script src="config.js"></script>', "<script>" + leggi("config.js").replace("INSERISCI_URL_PROGETTO_SUPABASE", "https://prova.supabase.co").replace("INSERISCI_ANON_KEY_SUPABASE", "k".repeat(40)) + "</script>");
+    const html = leggi("disiscrizione.html").replace('<script src="config.js"></script>', "<script>" + leggi("config.js").replace(/SUPABASE_URL:\s*"[^"]*"/, 'SUPABASE_URL: "https://prova.supabase.co"').replace(/SUPABASE_ANON_KEY:\s*"[^"]*"/, 'SUPABASE_ANON_KEY: "' + "k".repeat(40) + '"') + "</script>");
     const dm = new JSDOM(html, { runScripts: "dangerously", url, beforeParse(w) { w.fetch = async (u, i) => { chiam.push({ u, i }); return { json: async () => risposta }; }; } });
     await attendi(20); return dm;
   };

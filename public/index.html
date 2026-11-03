@@ -94,6 +94,17 @@
       <div id="sogliaBox" style="margin-top:14px"></div>
     </section>
     <section>
+      <h2>Analizza un solo titolo</h2>
+      <form id="formUno" class="row">
+        <div><label for="cercaUno">Scrivi il nome o il ticker (es. Apple, AAPL, oro) e scegli dall'elenco</label>
+        <input id="cercaUno" type="text" maxlength="30" autocomplete="off" style="margin-bottom:0"></div>
+        <button type="submit" id="btnUno">Analizza</button>
+      </form>
+      <div id="suggUno" class="sugg hidden"></div>
+      <div id="msgUno" class="muted" style="margin-top:6px"></div>
+      <div class="muted">Costa <b>1 uso</b> (nessuno se l'hai già analizzato oggi). Non viene aggiunto alla lista, a meno che tu lo voglia.</div>
+    </section>
+    <section>
       <h2>La mia lista</h2>
       <form id="formTicker" class="row">
         <div><label for="nuovoTicker">Cerca per nome o ticker (es. Apple, oro, VOO)</label>
@@ -371,7 +382,7 @@
     var c = $("btnCopiaUser"); if (c) c.onclick = async function () { c.textContent = (await MA.copia(S.profilo.username)) ? "Copiato!" : "Copia a mano"; };
     var r = $("btnRicontrolla"); if (r) r.onclick = async function () { r.disabled = true; await caricaChiave(); };
     var attiva = statoChiave() === "ok";
-    $("btnAnalizzaTutto").disabled = !attiva || S.inCorso;
+    $("btnAnalizzaTutto").disabled = !attiva || S.inCorso; $("btnUno").disabled = !attiva || S.inCorso;
     $("btnAggiornaPf").disabled = !attiva || S.inCorso;
     $("btnFerma").classList.toggle("hidden", !S.inCorso);
     $("btnFerma").disabled = !S.inCorso || !!S.stop;
@@ -506,6 +517,47 @@
     await caricaLista(); renderTutto();
   };
 
+
+  // ------------------------------------------------------------ ANALISI DI UN SOLO TITOLO
+  function trovaUno(q) {
+    q = String(q || "").trim(); var up = q.toUpperCase(), cat = window.MA_CATALOGO || [];
+    var esatto = cat.filter(function (x) { return x[0] === up; })[0];
+    if (esatto) return { t: esatto[0] };
+    var r = cercaCatalogo(q);
+    if (r.length === 1) return { t: r[0][0] };
+    if (r.length > 1) return { molti: true };
+    return /^[A-Z0-9.\-]{1,12}$/.test(up) ? { t: up } : { errore: "Ticker non valido (lettere/numeri, max 12)." };
+  }
+  function suggerimentiUno() {
+    var el = $("suggUno"), r = cercaCatalogo($("cercaUno").value);
+    if (!r.length) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+    el.classList.remove("hidden");
+    el.innerHTML = r.map(function (x) { return '<button type="button" class="sec sugg-voce" data-u="' + esc(x[0]) + '"><b>' + esc(x[0]) + "</b> " + esc(x[1]) + "</button>"; }).join("");
+    el.querySelectorAll("[data-u]").forEach(function (b) { b.onclick = function () { $("cercaUno").value = b.getAttribute("data-u"); el.classList.add("hidden"); avviaUno(); }; });
+  }
+  async function avviaUno() {
+    var msg = $("msgUno"), f = trovaUno($("cercaUno").value);
+    if (f.molti) { msg.textContent = "Più risultati: scegline uno dall'elenco."; msg.className = "err"; suggerimentiUno(); return; }
+    if (f.errore || !f.t) { msg.textContent = f.errore || "Scrivi un nome o un ticker."; msg.className = "err"; return; }
+    var t = f.t; msg.className = "muted"; msg.textContent = ""; $("suggUno").classList.add("hidden");
+    S.progId = "msgUno";
+    try { await analizzaLista([t]); } finally { S.progId = null; }
+    if (S.ris[t] && oz(S.ris[t])) {
+      var inLista = S.wl.some(function (w) { return w.ticker === t; });
+      msg.innerHTML = esc(t) + " analizzato." + (inLista ? "" : ' <button type="button" class="piccolo sec" id="btnUnoAgg">Aggiungi alla mia lista</button>');
+      var ba = $("btnUnoAgg");
+      if (ba) ba.onclick = async function () {
+        var cat = (window.MA_CATALOGO || []).filter(function (x) { return x[0] === t; })[0];
+        var r = await MA.sb.from("watchlist").insert({ user_id: S.utente.id, ticker: t, tipo: cat ? cat[2] : "azioni" });
+        msg.textContent = r.error ? "Non è stato possibile aggiungere " + t + "." : t + " aggiunto alla lista.";
+        if (!r.error) { await caricaLista(); renderTutto(); }
+      };
+      apriPannello(t, $("btnUno"));
+    } else if (S.err[t]) { msg.textContent = S.err[t]; msg.className = "err"; }
+  }
+  $("cercaUno").oninput = suggerimentiUno;
+  $("formUno").onsubmit = function (e) { e.preventDefault(); avviaUno(); };
+
   // ------------------------------------------------------------ RICERCA NEL CATALOGO
   function cercaCatalogo(q) {
     q = String(q || "").trim().toLowerCase();
@@ -633,7 +685,7 @@
       if (r.ok) return r;
       if (r.codice === "LIMITE_MINUTO" && tentativi < 3) {
         tentativi++;
-        $("progresso").innerHTML = '<span class="spinner"></span>Limite del servizio dati: attendo ' + (r.riprova_tra || 20) + ' secondi…';
+        $(S.progId || "progresso").innerHTML = '<span class="spinner"></span>Limite del servizio dati: attendo ' + (r.riprova_tra || 20) + ' secondi…';
         await attendiInterrompibile((r.riprova_tra || 20) * 1000);
         if (S.stop) return { ok: false, codice: "FERMATA", errore: "Analisi fermata." };
         continue;
@@ -652,12 +704,12 @@
 
   async function analizzaLista(tickers) {
     if (S.inCorso) return;
-    if (statoChiave() !== "ok") { $("progresso").textContent = "Accesso non attivo."; return; }
-    if (!tickers.length) { $("progresso").textContent = "Nessun titolo da analizzare."; return; }
+    if (statoChiave() !== "ok") { $(S.progId || "progresso").textContent = "Accesso non attivo."; return; }
+    if (!tickers.length) { $(S.progId || "progresso").textContent = "Nessun titolo da analizzare."; return; }
     // i titoli già analizzati oggi con l'ultima seduta disponibile non costano nulla
     var gratis = tickers.filter(function (t) { return S.ris[t] && S.rif && S.ris[t].ultima === S.rif; }).length, daPagare = tickers.length - gratis;
     if (daPagare > S.chiave.usi_rimasti) {
-      $("progresso").textContent = "Servono " + daPagare + " usi ma te ne restano " + S.chiave.usi_rimasti + ". Riduci la lista o chiedi una ricarica.";
+      $(S.progId || "progresso").textContent = "Servono " + daPagare + " usi ma te ne restano " + S.chiave.usi_rimasti + ". Riduci la lista o chiedi una ricarica.";
       return;
     }
     if (!window.confirm("Verranno usati al massimo " + daPagare + " usi (te ne restano " + S.chiave.usi_rimasti + ")." + (gratis ? " " + gratis + " titoli già analizzati con gli ultimi dati non costano nulla." : "") + " Procedere?")) return;
@@ -666,7 +718,7 @@
     for (var i = 0; i < tickers.length; i++) {
       if (S.stop) { fermata = true; break; }
       var t = tickers[i];
-      $("progresso").innerHTML = '<span class="spinner"></span>Analisi ' + (i + 1) + "/" + tickers.length + ": " + esc(t);
+      $(S.progId || "progresso").innerHTML = '<span class="spinner"></span>Analisi ' + (i + 1) + "/" + tickers.length + ": " + esc(t);
       var r = await analizzaUno(t);
       if (r.ok) {
         S.ris[t] = r; delete S.err[t]; fatti++; if (typeof r.usi_risparmiati === "number") S.risparmiati = r.usi_risparmiati;
@@ -674,7 +726,7 @@
         // rispetto del limite del servizio dati solo se il dato e' stato scaricato ora
         var fresco = r.dati_del && (Date.now() - new Date(r.dati_del).getTime()) < 60000;
         if (fresco && i < tickers.length - 1 && MA.C.PAUSA_MS > 0) {
-          $("progresso").innerHTML = '<span class="spinner"></span>Analisi ' + (i + 1) + "/" + tickers.length + ": " + esc(t) + " — pausa per il limite del servizio dati";
+          $(S.progId || "progresso").innerHTML = '<span class="spinner"></span>Analisi ' + (i + 1) + "/" + tickers.length + ": " + esc(t) + " — pausa per il limite del servizio dati";
           await attendiInterrompibile(MA.C.PAUSA_MS);
         }
       } else if (r.codice === "FERMATA") {
@@ -682,7 +734,7 @@
       } else {
         S.err[t] = r.errore || "Errore";
         if (typeof r.usi_rimasti === "number" && S.chiave) S.chiave.usi_rimasti = r.usi_rimasti;
-        if (FERMANTI.indexOf(r.codice) >= 0) { $("progresso").textContent = r.errore; break; }
+        if (FERMANTI.indexOf(r.codice) >= 0) { $(S.progId || "progresso").textContent = r.errore; break; }
       }
       renderStato(); renderRisultati();
     }
@@ -690,7 +742,7 @@
     S.inCorso = false; S.stop = false;
     salvaCache();
     await caricaChiave();
-    $("progresso").textContent = (fermata ? "Analisi fermata da te: " + fatti + " fatte su " + tickers.length + " (gli usi non consumati restano a te; i risultati ottenuti sono salvati). " : "Completato: " + fatti + " analisi su " + tickers.length + ". ") + (S.ultimaData ? "Aggiornato il " + MA.data(S.ultimaData, true) : "");
+    $(S.progId || "progresso").textContent = (fermata ? "Analisi fermata da te: " + fatti + " fatte su " + tickers.length + " (gli usi non consumati restano a te; i risultati ottenuti sono salvati). " : "Completato: " + fatti + " analisi su " + tickers.length + ". ") + (S.ultimaData ? "Aggiornato il " + MA.data(S.ultimaData, true) : "");
     renderTutto();
     controllaAllarmi(true);
   }
@@ -1296,7 +1348,8 @@
       var righe = d.calibrazione || [];
       var hc = righe.length ? "<table><thead><tr><th>Fascia dichiarata</th><th>Dichiarato</th><th>Osservato</th><th>Segnali</th></tr></thead><tbody>" +
         righe.map(function (r) { return "<tr><td>" + r.da + "–" + r.a + "%</td><td>" + fmt(r.previsto, 0) + "%</td><td>" + fmt(r.osservato, 0) + "%</td><td>" + r.n + "</td></tr>"; }).join("") + "</tbody></table>" : "Nessun segnale con percentuale dichiarata.";
-      if (d.brier !== null && d.brier !== undefined) hc += '<div class="muted" style="margin-top:8px">Brier score: <b>' + fmt(d.brier, 3) + "</b> (riferimento «indovinare sempre la media»: " + fmt(d.brier_base, 3) + "; più basso è meglio). " + (d.brier < d.brier_base ? "Migliore del riferimento." : "Non migliore del riferimento: le percentuali dichiarate non aggiungono informazione.") + "</div>";
+      if (d.chiusi < 30) hc += '<div class="muted" style="margin-top:8px">Il punteggio di precisione (Brier) comparirà dopo almeno 30 esiti: con pochi casi non significa nulla.</div>';
+      else if (d.brier !== null && d.brier !== undefined) hc += '<div class="muted" style="margin-top:8px">Brier score: <b>' + fmt(d.brier, 3) + "</b> (riferimento «indovinare sempre la media»: " + fmt(d.brier_base, 3) + "; più basso è meglio). " + (d.brier < d.brier_base ? "Migliore del riferimento." : "Non migliore del riferimento: le percentuali dichiarate non aggiungono informazione.") + "</div>";
       $("boxCalib").innerHTML = hc;
     }
     var lista = (ag && ag.data) || [];

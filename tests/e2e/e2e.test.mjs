@@ -11,7 +11,7 @@ const srv = createServer((q, r) => {
   const p = new URL(q.url, "http://x").pathname; const f = join(PUB, p === "/" ? "index.html" : p);
   if (!existsSync(f)) { r.statusCode = 404; return r.end(); }
   let b = readFileSync(f);
-  if (p === "/config.js") b = Buffer.from(b.toString().replace("INSERISCI_URL_PROGETTO_SUPABASE", "https://prova.supabase.co").replace("INSERISCI_ANON_KEY_SUPABASE", "k".repeat(40)).replace("PAUSA_MS: 7700", "PAUSA_MS: 0"));
+  if (p === "/config.js") b = Buffer.from(b.toString().replace(/SUPABASE_URL:\s*"[^"]*"/, 'SUPABASE_URL: "https://prova.supabase.co"').replace(/SUPABASE_ANON_KEY:\s*"[^"]*"/, 'SUPABASE_ANON_KEY: "' + "k".repeat(40) + '"').replace(/PAUSA_MS:\s*\d+/, "PAUSA_MS: 0"));
   r.setHeader("content-type", MIME[extname(f)] || "text/plain"); r.end(b);
 }).listen(0);
 const base = "http://localhost:" + srv.address().port + "/";
