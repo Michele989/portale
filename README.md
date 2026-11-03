@@ -143,3 +143,8 @@ Il precaricamento notturno scarica anche tutti i 420 titoli del catalogo (`_shar
 - Nuovi file sito: glossario.js, registro.js/html, stato.html, cookie.html.
 - Test: `cd tests && npm install && npm test`; browser vero: `npm run e2e`. Su GitHub girano a ogni push (test.yml).
 - Documenti: AUDIT.md, SICUREZZA.md, COLLAUDO.md.
+
+## Novembre: migliorie gratuite
+- Rieseguire `schema.sql` (nuove colonne e funzione `storico_verdetti`) e ridistribuire le funzioni (INSTALLA_FUNZIONI.bat).
+- Nuovo file `supabase/functions/_shared/confronti.ts`; test `test_confronti.mjs`, `test_backtest_cieco.mjs`.
+- Backtest cieco su dati reali: `TWELVEDATA_API_KEY=... node --experimental-strip-types tests/backtest_cieco.mjs 2022` (MAX_TITOLI=60 di default).

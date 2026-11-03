@@ -11,6 +11,7 @@ import { creaDati, ErroreServizio } from "../_shared/dati.ts";
 import { leggiGruppo } from "../_shared/gruppo.ts";
 import { analizzaOrizzonti, applicaDeclassamenti } from "../_shared/orizzonti.ts";
 import { mercatoDebole } from "../_shared/provider.ts";
+import { effettoCambio, liquidita, rendimentiTenere, volatilitaMercato } from "../_shared/confronti.ts";
 import type { Barra } from "../_shared/analisi.ts";
 
 const sb = createClient(
@@ -32,8 +33,8 @@ async function registra(ticker: string, barre: Barra[], a: any): Promise<void> {
     const st = statisticheStandard(barre);
     const ora = new Date().toISOString();
     await sb.from("backtest_ticker").upsert([
-      { ticker, tipo: "trend", vinti: st.trend.vinti, persi: st.trend.persi, scaduti: st.trend.scaduti, aggiornato_il: ora },
-      { ticker, tipo: "ribasso", vinti: st.ribasso.vinti, persi: st.ribasso.persi, scaduti: st.ribasso.scaduti, aggiornato_il: ora },
+      { ticker, tipo: "trend", vinti: st.trend.vinti, persi: st.trend.persi, scaduti: st.trend.scaduti, rend_somma: (st.trend.attesa ?? 0) * st.trend.n, caso_n: st.caso.n, caso_vinti: st.caso.vinti, caso_rend_somma: (st.caso.attesa ?? 0) * st.caso.n, aggiornato_il: ora },
+      { ticker, tipo: "ribasso", vinti: st.ribasso.vinti, persi: st.ribasso.persi, scaduti: st.ribasso.scaduti, rend_somma: (st.ribasso.attesa ?? 0) * st.ribasso.n, caso_n: st.caso.n, caso_vinti: st.caso.vinti, caso_rend_somma: (st.caso.attesa ?? 0) * st.caso.n, aggiornato_il: ora },
     ], { onConflict: "ticker,tipo" });
     const { data: aperti } = await sb.from("segnali").select("id, data_segnale").eq("ticker", ticker).is("esito", null);
     for (const sg of aperti || []) {
@@ -96,10 +97,15 @@ Deno.serve(async (req: Request) => {
     if (errUso || !cons || cons.usi < 0) return risposta({ ok: false, codice: "USI_ESAURITI", errore: "Nessun uso disponibile." }, 403);
     const rimasti = cons.usi as number; consumato = !cons.riuso;
     // Filtro di mercato: indice generale (SPY). Se non disponibile, l'analisi prosegue senza.
-    let mercato = null, regime = false;
+    let mercato = null, regime = false, barreSpy: Barra[] | null = null;
     if (ticker !== "SPY") {
-      try { const spy = (await datiTitolo("SPY", esauriti)).barre; mercato = statoMercato(spy, "SPY"); regime = mercatoDebole(spy); } catch (_e) { mercato = null; }
-    } else { regime = mercatoDebole(barre); }
+      try { const spy = (await datiTitolo("SPY", esauriti)).barre; barreSpy = spy; mercato = statoMercato(spy, "SPY"); regime = mercatoDebole(spy); } catch (_e) { mercato = null; }
+    } else { regime = mercatoDebole(barre); barreSpy = barre; }
+    // Contesto gratuito: "comprare e tenere" SPY, agitazione del mercato, liquidita' del titolo, effetto cambio euro/dollaro
+    let spyTenere = null, vol = null, cambio = null;
+    try { if (barreSpy) { spyTenere = rendimentiTenere(barreSpy); vol = volatilitaMercato(barreSpy); } } catch (_e) { /* ignora */ }
+    const liq = liquidita(barre);
+    if (!ticker.includes(".")) { try { cambio = effettoCambio((await datiTitolo("EURUSD", esauriti)).barre); } catch (_e) { cambio = null; } }
     const analisi = analizzaSerie(barre, opz, { mercato: ticker === "SPY" ? statoMercato(barre, "SPY") : mercato });
     if (!analisi) throw new ErroreServizio(404, "DATI_INSUFFICIENTI", "Storico insufficiente per " + ticker);
     await registra(ticker, barre, analisi); // registro segnali e statistiche: non blocca mai l'analisi
@@ -107,11 +113,11 @@ Deno.serve(async (req: Request) => {
     let orizzonti = null;
     try {
       const { gruppo, dati } = await leggiGruppo(sb, ticker, barre);
-      orizzonti = analizzaOrizzonti(barre.slice().reverse(), { datiOk: !analisi.qualita.gravi, gruppo: dati, nomeGruppo: NOMI_GRUPPO[gruppo] || gruppo, regimeSfavorevole: regime, datiIncerti: !!r.incerti });
+      orizzonti = analizzaOrizzonti(barre.slice().reverse(), { datiOk: !analisi.qualita.gravi, gruppo: dati, nomeGruppo: NOMI_GRUPPO[gruppo] || gruppo, regimeSfavorevole: regime, datiIncerti: !!r.incerti, spy: spyTenere, volatilitaAlta: !!(vol && vol.alta), liquiditaBassa: liq.bassa });
       const { data: decl } = await sb.from("modelli_declassati").select("modello, orizzonte");
       if (orizzonti && decl && decl.length) orizzonti = applicaDeclassamenti(orizzonti, decl);
     } catch (_e) { orizzonti = null; }
-    return risposta({ ok: true, ticker, ...analisi, orizzonti, dati_del: aggiornato, usi_rimasti: rimasti, riuso: !consumato, usi_risparmiati: cons.risparmiati ?? 0, regime_debole: regime, versione_modello: orizzonti ? orizzonti.breve.versione : null });
+    return risposta({ ok: true, ticker, ...analisi, orizzonti, dati_del: aggiornato, usi_rimasti: rimasti, riuso: !consumato, usi_risparmiati: cons.risparmiati ?? 0, regime_debole: regime, contesto: { volatilita: vol, liquidita: liq, cambio }, versione_modello: orizzonti ? orizzonti.breve.versione : null });
   } catch (e) {
     let usi = chiave.usi_rimasti;
     if (consumato) {

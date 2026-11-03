@@ -13,6 +13,7 @@
 // =========================================================================
 import { calcolaADX, rapportoVolume } from "./analisi.ts";
 import type { Barra } from "./analisi.ts";
+import type { RendTenere } from "./confronti.ts";
 
 export type NomeOrizzonte = "breve" | "medio" | "lungo";
 export const ORIZZONTI: Record<NomeOrizzonte, { giorni: number; etichetta: string }> = {
@@ -84,6 +85,12 @@ export interface StudioOrizzonte {
   trimestraleInArrivo: boolean;
   datiIncerti: boolean;
   fragile: boolean | null; // il segnale cambia spostando di poco i parametri (SMA 45/55, RSI 30/40)
+  vantaggioMin99: number | null; // come vantaggioMin ma al 99% (controllo falsi positivi)
+  falsoPositivo: boolean; // passa al 95% ma non al 99%: potrebbe essere fortuna, il verdetto resta neutro
+  volatilitaAlta: boolean;
+  liquiditaBassa: boolean;
+  confrontoSpy: { pPositivi: number | null; mediana: number | null; batte: boolean | null } | null; // "comprare e tenere" SPY nello stesso periodo
+  orizzontiInContrasto: boolean; // un orizzonte favorevole e un altro sfavorevole
   punteggio100: number; // 0-100, formula documentata (vedi PUNTEGGIO_FORMULA)
   scomposizione: { voce: string; punti: number; max: number }[];
   netto: { costoPct: number; tassaPct: number; mediana: number | null; p10: number | null; p90: number | null } | null;
@@ -103,9 +110,9 @@ export function rendimentoNetto(lordoPct: number | null, costoPct = COSTI_PREDEF
   return dopo > 0 ? dopo * (1 - tassaPct / 100) : dopo;
 }
 // Estremo inferiore Wilson al 95% (in %) per una percentuale p su n osservazioni indipendenti.
-export function wilsonBasso(pPct: number | null, n: number): number | null {
+export function wilsonBasso(pPct: number | null, n: number, z = 1.96): number | null {
   if (pPct === null || !(n > 0)) return null;
-  const z = 1.96, p = pPct / 100, den = 1 + z * z / n;
+  const p = pPct / 100, den = 1 + z * z / n;
   return Math.max(0, (p + z * z / (2 * n) - z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / den) * 100;
 }
 // Correzione verso la media (empirical Bayes): con pochi periodi indipendenti il dato pesa meno del gruppo.
@@ -348,6 +355,10 @@ export interface OpzioniOrizzonti {
   trimestraleInArrivo?: boolean; // disponibile solo se il fornitore dati lo fornisce
   datiIncerti?: boolean; // qualita' dati o controllo incrociato fallito
   costi?: { costoPct: number; tassaPct: number };
+  spy?: Record<NomeOrizzonte, RendTenere> | null; // rendimento di "comprare e tenere" SPY per orizzonte
+  volatilitaAlta?: boolean; // volatilita' del mercato molto alta: affidabilita' ridotta
+  liquiditaBassa?: boolean; // pochi scambi: prezzi meno affidabili
+  controlloFalsiPositivi?: boolean; // default true: il vantaggio deve reggere anche al 99%
 }
 
 export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Record<NomeOrizzonte, StudioOrizzonte> {
@@ -471,6 +482,7 @@ export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Re
     const pSim = usaSimili ? (simili as StatRendimenti).pPositivi : null;
     const vantaggio = base !== null && pSim !== null ? pSim - base : null;
     const vantaggioMin = usaSimili ? wilsonBasso(pSim, (simili as StatRendimenti).indipendenti) : null;
+    const vantaggioMin99 = usaSimili ? wilsonBasso(pSim, (simili as StatRendimenti).indipendenti, 2.576) : null;
     const haVantaggio = vantaggio !== null && vantaggio > 0 && vantaggioMin !== null && base !== null && vantaggioMin > base;
     // ---- verifica fuori campione: calibro fino a 12 mesi fa, controllo sugli ultimi 12 mesi ----
     const taglio = ultimo - 252;
@@ -506,6 +518,10 @@ export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Re
     if (oos.esito === "non_conferma" && affid !== "insufficiente") { affid = giu(affid); motivi.push("negli ultimi 12 mesi il vantaggio rispetto al solito non si e' confermato"); }
     const frag = fragileDi(nome);
     if (frag === true && affid !== "insufficiente") { affid = giu(affid); motivi.push("segnale fragile: cambia spostando di poco i parametri (media 45/55 giorni, RSI 30/40)"); }
+    const volAlta = !!opz.volatilitaAlta;
+    if (volAlta && affid !== "insufficiente") { affid = giu(affid); motivi.push("mercato molto agitato (volatilita' alta): le statistiche del passato valgono meno"); }
+    const liqBassa = !!opz.liquiditaBassa;
+    if (liqBassa && affid !== "insufficiente") { affid = tetto(affid, "bassa"); motivi.push("pochi scambi giornalieri: prezzi meno affidabili e piu' difficili da ottenere"); }
     const trim = !!opz.trimestraleInArrivo;
     if (trim) { affid = tetto(affid, "media"); motivi.push("risultati trimestrali in arrivo: affidabilita' al massimo media"); }
 
@@ -522,6 +538,11 @@ export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Re
     else if (punteggio >= 3 && haVantaggio && (stat.mediana as number) > 0) verdetto = "favorevole";
     else if ((punteggio <= 1 && !haVantaggio) || ((stat.mediana as number) < 0 && (stat.pPositivi as number) < 45)) verdetto = "sfavorevole";
     else verdetto = "neutro";
+    let falsoPositivo = false;
+    if (verdetto === "favorevole" && opz.controlloFalsiPositivi !== false && !(vantaggioMin99 !== null && base !== null && vantaggioMin99 > base)) {
+      verdetto = "neutro"; falsoPositivo = true;
+      motivi.push("il vantaggio regge al 95% ma non al 99%: con tanti titoli analizzati potrebbe essere solo fortuna");
+    }
     if (verdetto === "favorevole" && conferma === false) {
       verdetto = "neutro";
       motivi.push("il gruppo di titoli simili non conferma (salito solo nel " + Math.round((gr as StatGruppo).pPositivi as number) + "% dei casi)");
@@ -557,7 +578,9 @@ export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Re
       modello: rimbOra ? "rimbalzo" : "trend", gruppo: gr, confermaGruppo: conferma, confrontoGruppo, ampiezza95: ampiezza,
       ventaglio: opz.senzaVentaglio ? null : ventaglio(c, h),
       motivi,
-      versione: VERSIONE_MODELLO, base, vantaggio, vantaggioMin, pShrink, oos,
+      versione: VERSIONE_MODELLO, base, vantaggio, vantaggioMin, vantaggioMin99, falsoPositivo, volatilitaAlta: volAlta, liquiditaBassa: liqBassa,
+      confrontoSpy: (() => { const sp = opz.spy ? opz.spy[nome] : null; if (!sp || sp.mediana === null) return null; return { pPositivi: sp.pPositivi, mediana: sp.mediana, batte: stat.mediana === null || stat.pPositivi === null || sp.pPositivi === null ? null : (stat.mediana as number) > sp.mediana && (stat.pPositivi as number) > sp.pPositivi }; })(),
+      orizzontiInContrasto: false, pShrink, oos,
       regimeSfavorevole: regime, trimestraleInArrivo: trim, datiIncerti: incerti, fragile: frag,
       punteggio100: p100, scomposizione: scomp,
       netto: stat.mediana === null ? null : {
@@ -567,6 +590,9 @@ export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Re
       },
     };
   }
+  const vs = (Object.keys(risultato) as NomeOrizzonte[]).map((k) => risultato[k].verdetto);
+  const contrasto = vs.includes("favorevole") && vs.includes("sfavorevole");
+  for (const k of Object.keys(risultato) as NomeOrizzonte[]) risultato[k].orizzontiInContrasto = contrasto;
   return risultato;
 }
 

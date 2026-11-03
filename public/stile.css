@@ -210,3 +210,14 @@ dt{ font-weight:700; margin-top:10px; } dd{ margin:2px 0 0 0; color:var(--muted)
 }
 @media (prefers-reduced-motion:reduce){ *{ animation:none !important; transition:none !important; } }
 .r-tit{ min-width:0; } .apri{ max-width:100%; min-width:0; } .r-nome{ max-width:100%; }
+
+/* Pallino: punto di vista del programma */
+.riga{ position:relative; }
+.pallino{ display:inline-block; width:14px; height:14px; border-radius:50%; padding:0; min-height:0; border:2px solid var(--panel); box-shadow:0 0 0 1px var(--line); }
+.riga > .pallino{ position:absolute; top:6px; right:6px; cursor:pointer; }
+.p-verde{ background:#22c55e; } .p-giallo{ background:#f5b83d; } .p-rosso{ background:#ef4444; } .p-grigio{ background:#9aa5bd; }
+.vista{ display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid var(--line); border-radius:10px; margin:8px 0; }
+.vista .pallino{ margin-top:3px; flex:none; width:16px; height:16px; }
+
+.top3{ padding:10px 0; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:4px; }
+.cambi{ margin:6px 0; padding-left:18px; }

@@ -55,6 +55,7 @@ function creaSb(db, ctx) {
       if (nome === "esporta_miei_dati") { ctx.esportato = true; return { data: { lista: [], portafoglio: [] } }; }
       if (nome === "elimina_mio_account") { ctx.eliminato = true; return { data: null }; }
       if (nome === "statistiche_aggregate") return { data: ctx.aggregate || [] };
+      if (nome === "storico_verdetti") return { data: ctx.storico || [] };
       if (nome === "username_disponibile") return { data: !db.profiles.some((p) => p.username.toLowerCase() === args.p_username.toLowerCase()) }; return { data: null }; },
     from(tab) {
       let filtri = [], op = "select", payload, opts, ord, lim;
@@ -232,6 +233,51 @@ assert.match(testo(d, "boxStato"), /Ti restano 7 usi su 20/, "contatore aggiorna
   assert.equal(db.watchlist.length, lista0, "non aggiunto alla lista");
   assert.ok($(d, "btnUnoAgg"), "bottone aggiungi alla lista");
   d.window.document.getElementById("chiudiPannello").dispatchEvent(new d.window.MouseEvent("click", { bubbles: true }));
+}
+// PALLINO "punto di vista del programma": su ogni riga, con colore valido e spiegazione
+{
+  const pall = [...DOC.querySelectorAll("#boxClassifica .riga[data-t] .pallino")];
+  assert.ok(pall.length >= 10, "un pallino per riga: " + pall.length);
+  for (const x of pall) { assert.match(x.className, /p-(verde|giallo|rosso|grigio)/); assert.ok(x.getAttribute("title").length > 20 && x.getAttribute("aria-label")); }
+  click(d, pall[0]); await finche(() => !$(d, "pannello").classList.contains("hidden"), "pannello dal pallino", 5000);
+  assert.match(testo(d, "pannelloCorpo"), /Il mio punto di vista: .*non un consiglio/);
+  DOC.getElementById("chiudiPannello").dispatchEvent(new d.window.MouseEvent("click", { bubbles: true }));
+}
+// LE PIU' SOLIDE + concentrazione + prova senza soldi + cosa e' cambiato + storico verdetti
+{
+  const APP = d.window.__MA_APP, S2 = APP.S;
+  assert.match(testo(d, "boxTop3"), /Le più solide oggi/); assert.match(testo(d, "boxTop3"), /nessun titolo della tua lista ha il pallino verde/, "senza verdi: messaggio onesto");
+  // rendo "solido" VOO e SPY (stessa serie: correlazione alta) per provare il riquadro
+  const sol = (t) => { const o = S2.ris[t].orizzonti[S2.orizzonte]; Object.assign(o, { verdetto: "favorevole", affidabilita: "alta", fragile: false, regimeSfavorevole: false, datiIncerti: false, punteggio100: 82, vantaggio: 6, oos: { esito: "conferma" }, base: 55, confrontoSpy: { pPositivi: 58, mediana: 1.2, batte: true } }); S2.ris[t].contesto = { cambio: { orizzonti: { breve: { p10: -3, mediana: 0, p90: 3 }, medio: { p10: -4, mediana: 0, p90: 4 }, lungo: { p10: -8, mediana: 0, p90: 8 } } } }; };
+  sol("VOO"); sol("SPY"); S2.ris.SPY.serie = S2.ris.VOO.serie;
+  APP.renderRisultati();
+  const t3 = testo(d, "boxTop3");
+  assert.match(t3, /VOO[\s\S]*entro circa [\d ]*(mese|mesi|anno)[\s\S]*nell'80% dei casi tra/, "stima di tempo con intervallo");
+  assert.match(t3, /Tenere l'indice SPY[\s\S]*ha fatto meglio/, "confronto con SPY"); assert.match(t3, /cambio può spostare il risultato/, "effetto cambio");
+  assert.match(t3, /si muovono in modo molto simile/, "avviso di concentrazione");
+  assert.ok(DOC.querySelectorAll("#boxTop3 .top3").length <= 3);
+  click(d, DOC.querySelector('#boxTop3 [data-vai="VOO"]')); assert.ok(!$(d, "pannello").classList.contains("hidden"), "dal riquadro si apre il dettaglio"); click(d, $(d, "chiudiPannello"));
+  click(d, DOC.querySelector("#boxTop3 [data-g=verdetto]")); assert.ok(!$(d, "popover").classList.contains("hidden"), "badge cliccabile anche qui"); d.window.document.dispatchEvent(new d.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  click(d, $(d, "btnProva")); assert.match(testo(d, "boxTop3"), /La mia prova senza soldi[\s\S]*VOO/);
+  click(d, $(d, "btnProvaAzzera")); assert.ok(!/La mia prova/.test(testo(d, "boxTop3")), "prova azzerata");
+  // il pannello mostra: incertezza, confronto SPY, storico (stabile / ballerino)
+  ctx.storico = [{ o: S2.orizzonte, d: "2026-09-01", v: "neutro" }, { o: S2.orizzonte, d: "2026-09-20", v: "favorevole" }, { o: S2.orizzonte, d: "2026-10-01", v: "neutro" }, { o: S2.orizzonte, d: "2026-10-10", v: "favorevole" }, { o: S2.orizzonte, d: "2026-10-20", v: "neutro" }];
+  click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]'));
+  await finche(() => /Storico del verdetto/.test(testo(d, "pannelloCorpo")), "storico verdetti");
+  assert.match(testo(d, "pannelloCorpo"), /cambiato 4 volte[\s\S]*ballerino/); assert.match(testo(d, "pannelloCorpo"), /può andare da/); assert.match(testo(d, "pannelloCorpo"), /Tenere l'indice SPY/);
+  click(d, $(d, "chiudiPannello"));
+  // contrasto fra orizzonti
+  S2.ris.VOO.orizzonti.breve.verdetto = "favorevole"; S2.ris.VOO.orizzonti.lungo.verdetto = "sfavorevole"; for (const k of ["breve", "medio", "lungo"]) S2.ris.VOO.orizzonti[k].orizzontiInContrasto = true;
+  click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]')); assert.match(testo(d, "pannelloCorpo"), /orizzonti sono in contrasto/); click(d, $(d, "chiudiPannello"));
+  // cosa e' cambiato: un verdetto diverso dall'analisi precedente viene segnalato
+  const prima = JSON.parse(d.window.localStorage.getItem(Object.keys(d.window.localStorage).find((k) => k.startsWith("ma_vprec_"))) || "{}");
+  assert.ok(prima.VOO, "verdetti precedenti salvati");
+  const kk = Object.keys(d.window.localStorage).find((k) => k.startsWith("ma_vprec_"));
+  const vp = JSON.parse(d.window.localStorage.getItem(kk)); vp.VOO = { breve: "favorevole", medio: "favorevole", lungo: "favorevole" }; d.window.localStorage.setItem(kk, JSON.stringify(vp));
+  S2.chiave.usi_rimasti = Math.max(S2.chiave.usi_rimasti, 5); db.access_keys[0].usi_rimasti = Math.max(db.access_keys[0].usi_rimasti, 5);
+  await APP.analizzaLista(["VOO"]);
+  assert.match(testo(d, "boxCambi"), /Cosa è cambiato[\s\S]*VOO[\s\S]*Favorevole →/, "cambio di verdetto segnalato");
+  click(d, $(d, "btnCambiOk")); assert.equal(testo(d, "boxCambi"), "", "nascondi");
 }
 // FASE 2: riga compatta con verdetto, punteggio, vantaggio, affidabilita', sparkline e badge
 {
@@ -521,9 +567,10 @@ assert.match(testo(d, "risultati"), /Mercato generale \(SPY\) sotto la media a 2
 click(d, d.window.document.querySelector('#menu [data-tab="affidabilita"]'));
 await finche(() => /appena iniziato/.test(testo(d, "boxTrack")), "registro vuoto");
 ctx.track = { chiusi: 40, vinti: 22, persi: 12, scaduti: 6, aperti: 3, rendimento_medio: 1.4, dal: "2026-09-01", brier: 0.2, brier_base: 0.25, calibrazione: [{ da: 40, a: 60, previsto: 52, osservato: 50, n: 20 }] };
-ctx.aggregate = [{ tipo: "trend", titoli: 30, vinti: 300, persi: 250, scaduti: 150 }];
+ctx.aggregate = [{ tipo: "trend", titoli: 30, vinti: 300, persi: 250, scaduti: 150, rend_medio: 0.8, caso_pct: 38, caso_medio: 0.3, caso_n: 5000 }];
 click(d, $(d, "btnAggiornaAff")); await finche(() => /Obiettivo raggiunto/.test(testo(d, "boxTrack")), "registro con dati");
 assert.match(testo(d, "boxTrack"), /22 \(55%/); assert.match(testo(d, "boxCalib"), /Migliore del riferimento/); assert.match(testo(d, "boxAggregate"), /Trend rialzista[\s\S]*30[\s\S]*700/);
+assert.match(testo(d, "boxAggregate"), /Rend\. medio[\s\S]*Giorno qualsiasi[\s\S]*\+0,8%[\s\S]*38% · \+0,3%/, "rendimento medio e confronto con un giorno qualsiasi");
 assert.match(testo(d, "boxRegistro"), /Il registro è appena iniziato/, "registro verdetti vuoto: messaggio onesto");
 ctx.registro = { dal: "2026-09-01", chiusi: 120, aperti: 30, brier: 0.22, brier_base: 0.25,
   orizzonti: [{ orizzonte: "breve", n: 120, base_pct: 60, n_fav: 40, fav_pct: 68, n_neu: 50, neu_pct: 60, n_sfav: 30, sfav_pct: 47 }],

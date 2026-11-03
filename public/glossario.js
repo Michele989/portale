@@ -124,13 +124,14 @@
       esc = esc || function (x) { return String(x); };
       var gen = {
         verdetto: "Il giudizio sintetico: Favorevole, Neutro, Sfavorevole o Non valutabile.",
+        pallino: "Pallino in alto a destra: verde = scelta più prudente (statistiche affidabili), giallo = più rischioso, rosso = meglio aspettare, grigio = dati insufficienti. È un'opinione sul passato, non un consiglio.",
         punteggio: VOCI.punteggio.semplice({}),
         vantaggio: VOCI.vantaggio.semplice({}),
         affidabilita: VOCI.affidabilita.semplice({}),
         ipervenduto: VOCI.ipervenduto.semplice({}), volume: VOCI.volume.semplice({}), trimestrale: VOCI.trimestrale.semplice({}),
         incerti: VOCI.incerti.semplice({}), mercato: VOCI.mercato.semplice({}), fragile: VOCI.fragile.semplice({}), confermato: VOCI.confermato.semplice({})
       };
-      var nomi = { verdetto: "Verdetto", punteggio: "Punteggio 0–100", vantaggio: "Vantaggio sul solito", affidabilita: "Affidabilità", ipervenduto: "Ipervenduto", volume: "Volume alto", trimestrale: "Trimestrale in arrivo", incerti: "Dati incerti", mercato: "Mercato debole", fragile: "Segnale fragile", confermato: "Confermato 3 giorni" };
+      var nomi = { pallino: "Pallino colorato", verdetto: "Verdetto", punteggio: "Punteggio 0–100", vantaggio: "Vantaggio sul solito", affidabilita: "Affidabilità", ipervenduto: "Ipervenduto", volume: "Volume alto", trimestrale: "Trimestrale in arrivo", incerti: "Dati incerti", mercato: "Mercato debole", fragile: "Segnale fragile", confermato: "Confermato 3 giorni" };
       return Object.keys(gen).map(function (k) { return "<dt>" + esc(nomi[k]) + "</dt><dd>" + esc(gen[k]) + "</dd>"; }).join("");
     }
   };

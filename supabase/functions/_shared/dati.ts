@@ -24,7 +24,8 @@ export function creaDati(sb: any, cfg: ConfigDati) {
   const STORICO_RIDOTTO = 1300;
 
   async function chiedi(ticker: string, n: number, adjust: boolean): Promise<Barra[]> {
-    const url = "https://api.twelvedata.com/time_series?symbol=" + encodeURIComponent(ticker) +
+    const simbolo = ticker === "EURUSD" ? "EUR/USD" : ticker; // il cambio euro/dollaro si chiede con la barra
+    const url = "https://api.twelvedata.com/time_series?symbol=" + encodeURIComponent(simbolo) +
       "&interval=1day&outputsize=" + n + (adjust ? "&adjust=all" : "") + "&apikey=" + cfg.tdKey;
     let dati: any;
     try {

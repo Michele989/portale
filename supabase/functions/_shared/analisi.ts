@@ -399,14 +399,16 @@ export function valuta(cron: Barra[], tipo: TipoBacktest, opz: OpzioniAnalisi, d
 }
 
 // Statistiche con parametri standard (8/8/0.2): usate per il registro dei segnali e per i dati aggregati.
-export function statisticheStandard(barre: Barra[]): { trend: StatOps; ribasso: StatOps } {
+export function statisticheStandard(barre: Barra[]): { trend: StatOps; ribasso: StatOps; caso: StatOps } {
   const cron = barre.slice().reverse();
   const c = cron.map((x) => x.c);
   const f = (t: TipoBacktest) => {
     const g = giorniSegnale(c, t);
     return statOps(simula(cron, (i) => g[i], STANDARD, true), cron.length - 50);
   };
-  return { trend: f("trend"), ribasso: f("ribasso") };
+  // "giorno qualsiasi": stesse regole di uscita ma entrando ogni volta che si e' liberi (riferimento per capire se i segnali aggiungono qualcosa)
+  const caso = statOps(simula(cron, () => true, STANDARD, true), cron.length - 50);
+  return { trend: f("trend"), ribasso: f("ribasso"), caso };
 }
 
 // Valuta un segnale passato (data = giorno del segnale) con le regole standard.
@@ -461,6 +463,15 @@ export function controllaDati(rec: Barra[], oggi: Date = new Date()): QualitaDat
     if (salto >= 0.45) { salti++; avvisi.push("Variazione di " + (salto * 100).toFixed(0) + "% in un giorno (" + rec[k].d + "): possibile frazionamento non corretto"); }
     if (rec[k].h < rec[k].l || rec[k].c > rec[k].h * 1.01 || rec[k].c < rec[k].l * 0.99) incoerenti++;
   }
+  // prezzi non positivi o "fermi" (stesso prezzo di chiusura per molti giorni di fila: dato probabilmente non aggiornato)
+  let nonPositivi = 0, fermi = 0, serie = 1, maxFermi = 1;
+  for (let k = 0; k < ultimiK; k++) {
+    if (!(rec[k].c > 0)) nonPositivi++;
+    if (rec[k].c === rec[k + 1].c) { serie++; maxFermi = Math.max(maxFermi, serie); } else serie = 1;
+  }
+  fermi = maxFermi;
+  if (nonPositivi > 0) { avvisi.push("Prezzi nulli o negativi in " + nonPositivi + " giorni"); gravi = true; }
+  if (fermi >= 8) avvisi.push("Prezzo di chiusura identico per " + fermi + " giorni di fila: dato forse non aggiornato");
   if (disordine) { avvisi.push("Date duplicate o non ordinate nello storico"); gravi = true; }
   if (buchi > 0) { avvisi.push(buchi + (buchi === 1 ? " buco" : " buchi") + " di oltre 10 giorni nello storico"); if (buchi > 3) gravi = true; }
   if (incoerenti > 5) { avvisi.push("Prezzi incoerenti in " + incoerenti + " giorni"); gravi = true; }

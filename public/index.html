@@ -134,6 +134,8 @@
       <div class="muted" style="margin-top:8px">Ogni titolo analizzato consuma <b>1 uso</b>. Prima di partire ti viene mostrato quanti ne userai.</div>
       <div id="progresso" class="muted" style="margin-top:6px"></div>
     </section>
+    <div id="boxCambi"></div>
+    <div id="boxTop3"></div>
     <div id="boxClassifica"></div>
     <div id="boxIpervenduti"></div>
     <div id="risultati"></div>
@@ -721,7 +723,7 @@
       $(S.progId || "progresso").innerHTML = '<span class="spinner"></span>Analisi ' + (i + 1) + "/" + tickers.length + ": " + esc(t);
       var r = await analizzaUno(t);
       if (r.ok) {
-        S.ris[t] = r; delete S.err[t]; fatti++; if (typeof r.usi_risparmiati === "number") S.risparmiati = r.usi_risparmiati;
+        registraCambio(t, r); S.ris[t] = r; delete S.err[t]; fatti++; if (typeof r.usi_risparmiati === "number") S.risparmiati = r.usi_risparmiati;
         if (S.chiave) S.chiave.usi_rimasti = r.usi_rimasti;
         // rispetto del limite del servizio dati solo se il dato e' stato scaricato ora
         var fresco = r.dati_del && (Date.now() - new Date(r.dati_del).getTime()) < 60000;
@@ -768,7 +770,7 @@
   function testoDimensione(d) {
     if (d.qta >= 1) return "Dimensione indicativa col tuo rischio: <b>" + d.qta + "</b> unità (≈ " + fmt(d.costo, 0) + ", rischio ≈ " + fmt(d.rischio, 0) + ").";
     if (!(d.cap > 0)) return "Imposta il capitale nelle Impostazioni per vedere la dimensione indicativa.";
-    return "Prezzo oltre il tuo rischio impostato: non basta per 1 unità intera." + (d.fraz > 0 ? " Con azioni frazionate: ≈ <b>" + fmt(d.fraz, 2) + "</b> unità (≈ " + fmt(d.fraz * d.prezzo, 0) + ")." : "");
+    return "Con il rischio che hai impostato non puoi comprare nemmeno 1 azione intera (costa troppo)." + (d.fraz > 0 ? " Se il tuo broker permette le azioni frazionate, ne puoi comprare circa <b>" + fmt(d.fraz, 2) + "</b> (≈ " + fmt(d.fraz * d.prezzo, 0) + ")." : "");
   }
   function dataBreve(iso) { var p = String(iso || "").split("-"); return p.length === 3 ? p[2] + "/" + p[1] : esc(iso || "n/d"); }
   function etichettaStato(s) {
@@ -1043,10 +1045,168 @@
     if (o.fragile === true) l.push(["fragile", "≈ Fragile", "att"]);
     return l.map(function (x) { return '<button type="button" class="tag mini ' + x[2] + '" data-g="' + x[0] + '">' + x[1] + "</button>"; }).join("");
   }
+
+  // ------------------------------------------------------------ LE PIU' SOLIDE, CONCENTRAZIONE, CAMBI, PROVA
+  function rendSerie(a) { var v = (a && a.serie || []).map(function (p) { return p.c; }), r = []; for (var i = 1; i < v.length; i++) r.push(v[i] / v[i - 1] - 1); return r; }
+  function correl(x, y) {
+    var n = Math.min(x.length, y.length); if (n < 20) return null;
+    x = x.slice(x.length - n); y = y.slice(y.length - n);
+    var mx = x.reduce(function (a, b) { return a + b; }, 0) / n, my = y.reduce(function (a, b) { return a + b; }, 0) / n, sxy = 0, sxx = 0, syy = 0;
+    for (var i = 0; i < n; i++) { sxy += (x[i] - mx) * (y[i] - my); sxx += (x[i] - mx) * (x[i] - mx); syy += (y[i] - my) * (y[i] - my); }
+    return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : null;
+  }
+  // Media delle correlazioni tra coppie di titoli: se e' alta salgono e scendono insieme (poca diversificazione)
+  function concentrazione(tickers) {
+    var cs = [];
+    for (var i = 0; i < tickers.length; i++) for (var j = i + 1; j < tickers.length; j++) { var c = correl(rendSerie(S.ris[tickers[i]]), rendSerie(S.ris[tickers[j]])); if (c !== null) cs.push(c); }
+    if (!cs.length) return { media: null, alta: false };
+    var m = cs.reduce(function (a, b) { return a + b; }, 0) / cs.length;
+    return { media: m, alta: m >= 0.8 };
+  }
+  function fraseTempo(o, u) {
+    var sub = ORIZ[S.orizzonte].sub.replace("circa ", "circa "), net = S.fil.netto && o.netto && o.netto.mediana !== null;
+    if (!u || !u.n) return "Non ci sono abbastanza casi simili per stimare un tempo.";
+    var med = net ? o.netto.mediana : u.mediana, p10 = net ? o.netto.p10 : u.p10, p90 = net ? o.netto.p90 : u.p90;
+    return "In casi simili a oggi, <b>entro " + sub + "</b> il prezzo era più alto nel <b>" + fmt(u.pPositivi, 0) + "%</b> dei casi" + (o.base !== null && o.base !== undefined ? " (in un periodo qualsiasi: " + fmt(o.base, 0) + "%)" : "") +
+      ". Guadagno tipico " + sg(med, 1) + "%" + (net ? " netto" : "") + (p10 !== null && p10 !== undefined && p90 !== null && p90 !== undefined ? "; nell'80% dei casi tra " + sg(p10, 1) + "% e " + sg(p90, 1) + "%" : "") + ".";
+  }
+  function fraseSpy(o) {
+    var c = o.confrontoSpy; if (!c || c.mediana === null || c.mediana === undefined) return "";
+    return "Tenere l'indice SPY per lo stesso periodo: salito nel " + fmt(c.pPositivi, 0) + "% dei casi, guadagno tipico " + sg(c.mediana, 1) + "%. " +
+      (c.batte === true ? '<span class="ok">Questo titolo, in casi simili, ha fatto meglio.</span>' : c.batte === false ? '<span class="err">Questo titolo, in casi simili, non ha fatto meglio dell\'indice.</span>' : "");
+  }
+  function fraseCambio(a) {
+    var cb = a && a.contesto && a.contesto.cambio, z = cb && cb.orizzonti ? cb.orizzonti[S.orizzonte] : null;
+    if (!z) return "";
+    return "Se compri in euro un titolo in dollari, il cambio può spostare il risultato: nell'80% dei casi tra " + sg(z.p10, 1) + "% e " + sg(z.p90, 1) + "% su questo periodo (il segno − riduce il tuo guadagno in euro).";
+  }
+  function fraseIncertezza(o, u) {
+    if (!u || !u.n || u.p10 === null || u.p10 === undefined) return "";
+    var net = S.fil.netto && o.netto && o.netto.mediana !== null;
+    return "Guadagno tipico " + sg(net ? o.netto.mediana : u.mediana, 1) + "%: ma può andare da " + sg(net ? o.netto.p10 : u.p10, 1) + "% a " + sg(net ? o.netto.p90 : u.p90, 1) + "% (nell'80% dei casi). Il numero singolo non è una promessa.";
+  }
+  function chiaveLS(n) { return "ma_" + n + "_" + (S.utente ? S.utente.id : "x"); }
+  function leggiLS(n, def) { try { var x = JSON.parse(localStorage.getItem(chiaveLS(n)) || "null"); return x === null ? def : x; } catch (e) { return def; } }
+  function scriviLS(n, v) { try { localStorage.setItem(chiaveLS(n), JSON.stringify(v)); } catch (e) { /* ignora */ } }
+
+  // Cosa e' cambiato: confronta i verdetti con quelli dell'analisi precedente (salvati su questo browser)
+  function registraCambio(t, r) {
+    if (!r || !r.orizzonti) return;
+    var prec = leggiLS("vprec", {}), nuovo = {};
+    ["breve", "medio", "lungo"].forEach(function (k) { if (r.orizzonti[k]) nuovo[k] = r.orizzonti[k].verdetto; });
+    var vecchio = prec[t];
+    if (vecchio) {
+      var cambi = leggiLS("cambi", []);
+      ["breve", "medio", "lungo"].forEach(function (k) {
+        if (vecchio[k] && nuovo[k] && vecchio[k] !== nuovo[k]) cambi.unshift({ t: t, o: k, da: vecchio[k], a: nuovo[k], q: new Date().toISOString().slice(0, 10) });
+      });
+      scriviLS("cambi", cambi.slice(0, 30));
+    }
+    prec[t] = nuovo; scriviLS("vprec", prec);
+  }
+  function renderCambi() {
+    var box = $("boxCambi"), c = leggiLS("cambi", []);
+    if (!c.length) { box.innerHTML = ""; return; }
+    box.innerHTML = '<section><h2>Cosa è cambiato</h2><div class="muted">Verdetti diversi rispetto alla tua analisi precedente.</div><ul class="cambi">' +
+      c.slice(0, 8).map(function (x) { return "<li><b>" + esc(x.t) + "</b> (" + ORIZ[x.o].nome.toLowerCase() + " termine): " + esc(G.verdetti[x.da] ? G.verdetti[x.da].t : x.da) + " → <b>" + esc(G.verdetti[x.a] ? G.verdetti[x.a].t : x.a) + '</b> <span class="muted">(' + esc(MA.data(x.q)) + ")</span></li>"; }).join("") +
+      '</ul><button type="button" class="piccolo sec" id="btnCambiOk">Nascondi</button></section>';
+    $("btnCambiOk").onclick = function () { scriviLS("cambi", []); renderCambi(); };
+  }
+
+  // Prova senza soldi: segue le scelte nel tempo, solo su questo browser
+  function renderTop3() {
+    var box = $("boxTop3");
+    if (!box._ok) {
+      box._ok = true;
+      box.addEventListener("click", function (e) {
+        var g = e.target.closest ? e.target.closest("[data-g]") : null;
+        if (g) { var r = g.closest("[data-t]"); if (r) apriPopover(g, g.getAttribute("data-g"), r.getAttribute("data-t")); return; }
+        var v = e.target.closest ? e.target.closest("[data-vai]") : null;
+        if (v) apriPannello(v.getAttribute("data-vai"), v);
+      });
+    }
+    var tickers = Object.keys(S.ris).filter(function (t) { return S.wl.some(function (x) { return x.ticker === t; }) && oz(S.ris[t]); });
+    if (!tickers.length) { box.innerHTML = ""; return; }
+    var verdi = tickers.filter(function (t) { return giudizio(S.ris[t], oz(S.ris[t])).c === "verde"; })
+      .sort(function (a, b) { return oz(S.ris[b]).punteggio100 - oz(S.ris[a]).punteggio100; }).slice(0, 3);
+    var h = '<section><h2>Le più solide oggi</h2><div class="muted">Sono i titoli della tua lista con statistiche più affidabili sul ' + ORIZ[S.orizzonte].nome.toLowerCase() + ' termine. Non è un consiglio d\'acquisto né una previsione: il passato non garantisce il futuro.</div>';
+    if (!verdi.length) h += '<div class="vuoto">Oggi nessun titolo della tua lista ha il pallino verde. Aspettare è una scelta valida.</div>';
+    else {
+      h += verdi.map(function (t) {
+        var a = S.ris[t], o = oz(a), u = statUsata(o), sp = fraseSpy(o), cb = fraseCambio(a);
+        return '<div class="top3" data-t="' + esc(t) + '"><div class="r-bd"><span class="pallino p-verde" aria-hidden="true"></span> <button type="button" class="apri" data-vai="' + esc(t) + '"><b>' + esc(t) + '</b> <span class="muted">' + esc(NOMI[t] || "") + "</span></button> " + badgeVerdetto(o) + '<span class="num">Punteggio ' + o.punteggio100 + "</span></div>" +
+          "<div>" + fraseTempo(o, u) + "</div>" + (sp ? '<div class="muted">' + sp + "</div>" : "") + (cb ? '<div class="muted">' + cb + "</div>" : "") + "</div>";
+      }).join("");
+      var conc = concentrazione(verdi);
+      if (verdi.length >= 2 && conc.alta) h += '<div class="nota">Attenzione: questi titoli si muovono in modo molto simile (correlazione media ' + fmt(conc.media, 2) + "). Se uno scende, probabilmente scendono anche gli altri: la diversificazione è bassa.</div>";
+      h += '<button type="button" class="piccolo sec" id="btnProva">Segui in prova (senza soldi)</button> ';
+    }
+    var prova = leggiLS("prova", []);
+    if (prova.length) {
+      var spyOra = S.ris.SPY ? S.ris.SPY.prezzo : null;
+      h += '<h3>La mia prova senza soldi</h3><div class="muted">Come sarebbero andate le scelte che hai seguito. Ripeti l\'analisi per aggiornare i prezzi. Salvata solo su questo browser.</div><table><thead><tr><th>Titolo</th><th>Da</th><th>Variazione</th><th>SPY nello stesso periodo</th></tr></thead><tbody>' +
+        prova.map(function (x) {
+          var cur = S.ris[x.t] ? S.ris[x.t].prezzo : null, v = cur !== null && x.p ? (cur / x.p - 1) * 100 : null, vs = spyOra !== null && x.s ? (spyOra / x.s - 1) * 100 : null;
+          return "<tr><td>" + esc(x.t) + "</td><td>" + esc(MA.data(x.q)) + "</td><td>" + (v === null ? "n/d" : '<span class="' + (v >= 0 ? "ok" : "err") + '">' + sg(v, 1) + "%</span>") + "</td><td>" + (vs === null ? "n/d" : sg(vs, 1) + "%") + "</td></tr>";
+        }).join("") + '</tbody></table><button type="button" class="piccolo sec" id="btnProvaAzzera">Azzera la prova</button>';
+    }
+    box.innerHTML = h + "</section>";
+    var bp = $("btnProva");
+    if (bp) bp.onclick = function () {
+      var p = leggiLS("prova", []), q = new Date().toISOString().slice(0, 10), spyP = S.ris.SPY ? S.ris.SPY.prezzo : null;
+      verdi.forEach(function (t) { if (!p.some(function (x) { return x.t === t; })) p.push({ t: t, p: S.ris[t].prezzo, q: q, s: spyP }); });
+      scriviLS("prova", p); renderTop3();
+    };
+    var bz = $("btnProvaAzzera"); if (bz) bz.onclick = function () { scriviLS("prova", []); renderTop3(); };
+  }
+
+  // Storico dei verdetti di un titolo (ultimi 120 giorni): stabile o ballerino?
+  async function caricaStorico(t) {
+    var el = $("storicoV"); if (!el) return;
+    var r = await MA.sb.rpc("storico_verdetti", { p_ticker: t });
+    if (!$("storicoV") || S.apri !== t) return;
+    var rows = (r && r.data || []).filter(function (x) { return x.o === S.orizzonte; });
+    if (!rows.length) { el.innerHTML = '<span class="muted">Storico non ancora disponibile (si costruisce giorno dopo giorno).</span>'; return; }
+    var cambi = [], ult = null;
+    rows.forEach(function (x) { if (x.v !== ult) { cambi.push(x); ult = x.v; } });
+    var n = cambi.length - 1;
+    el.innerHTML = "<b>Storico del verdetto (" + ORIZ[S.orizzonte].nome.toLowerCase() + " termine, ultimi 120 giorni):</b> " + (n <= 0 ? "sempre " + esc(G.verdetti[ult] ? G.verdetti[ult].t : ult) + " da quando lo registriamo: <span class=\"ok\">stabile</span>." :
+      "cambiato " + n + (n === 1 ? " volta" : " volte") + (n >= 4 ? ': <span class="err">ballerino, meno affidabile</span>. ' : ": ") + cambi.slice(-5).map(function (x) { return esc(MA.data(x.d)) + " " + esc(G.verdetti[x.v] ? G.verdetti[x.v].t : x.v); }).join(" → "));
+  }
+
+  // ------------------------------------------------------------ PUNTO DI VISTA DEL PROGRAMMA (pallino)
+  var _mm = { k: "", v: null };
+  function medianaLista() {
+    var k = Object.keys(S.ris).length + "|" + S.orizzonte + "|" + (S.ultimaData || "");
+    if (_mm.k === k) return _mm.v;
+    var v = Object.keys(S.ris).map(function (t) { var o = oz(S.ris[t]); if (!o) return null; var u = statUsata(o); return u && u.n && typeof u.mediana === "number" ? u.mediana : null; }).filter(function (x) { return x !== null; }).sort(function (x, y) { return x - y; });
+    _mm = { k: k, v: v.length >= 3 ? v[Math.floor(v.length / 2)] : null };
+    return _mm.v;
+  }
+  function giudizio(a, o) {
+    var u = statUsata(o), med = u && u.n && typeof u.mediana === "number" ? u.mediana : null, ml = medianaLista();
+    if (o.verdetto === "non_valutabile" || o.datiIncerti) return { c: "grigio", t: "Dati insufficienti", f: "Non ho dati abbastanza affidabili per questo titolo: meglio non decidere basandoti su di me." };
+    if (o.verdetto === "sfavorevole") return { c: "rosso", t: "Meglio aspettare", f: "Nel passato, in giorni come oggi questo titolo è andato peggio del solito. Le statistiche non sono dalla sua parte." };
+    var affOk = o.affidabilita === "alta" || o.affidabilita === "media";
+    var bene = affOk && o.fragile !== true && !(o.oos && o.oos.esito === "non_conferma") && !o.regimeSfavorevole;
+    if (bene && (o.verdetto === "favorevole" || (o.vantaggio !== null && o.vantaggio !== undefined && o.vantaggio >= 0 && med !== null && med > 0))) {
+      var basso = med !== null && ml !== null && med < ml;
+      return { c: "verde", t: "Scelta più prudente", f: basso ? "Le statistiche su questo titolo sono più affidabili, ma il guadagno tipico è più basso della media della tua lista: guadagni più piccoli, ma con meno sorprese." : "Le statistiche sono affidabili e il guadagno tipico è buono rispetto agli altri titoli della tua lista." };
+    }
+    var m = [];
+    if (!affOk) m.push("le statistiche sono poco solide (pochi casi o risultati instabili)");
+    if (o.fragile === true) m.push("il segnale cambia se si spostano di poco i parametri");
+    if (o.oos && o.oos.esito === "non_conferma") m.push("negli ultimi 12 mesi non ha confermato");
+    if (o.regimeSfavorevole) m.push("il mercato generale è debole");
+    if (!m.length) m.push("non ha un vantaggio chiaro sul solito");
+    return { c: "giallo", t: "Più rischioso", f: "Può dare guadagni, ma è meno sicuro: " + m.join("; ") + "." };
+  }
+  function pallino(g, t) { return '<button type="button" class="pallino p-' + g.c + '" data-vai="' + esc(t) + '" title="' + esc(g.t + ": " + g.f) + '" aria-label="' + esc("Punto di vista del programma: " + g.t) + '"></button>'; }
+
   function riga(t) {
     var a = S.ris[t], o = oz(a), u = statUsata(o), pr = S.soglia ? probStat(u) : null;
     var pref = !!S.pref[t], conf = S.conf.indexOf(t) >= 0;
-    return '<div class="riga" data-t="' + esc(t) + '">' +
+    return '<div class="riga" data-t="' + esc(t) + '">' + pallino(giudizio(a, o), t) +
       '<div class="r-tit"><button type="button" class="apri" data-vai="' + esc(t) + '"><b>' + esc(t) + '</b><span class="muted r-nome">' + esc(NOMI[t] || "") + "</span></button></div>" +
       '<div class="r-ver">' + badgeVerdetto(o) + "</div>" +
       '<div class="r-pt"><span class="r-et">Punteggio</span><button type="button" class="num" data-g="punteggio">' + o.punteggio100 + "</button></div>" +
@@ -1155,7 +1315,7 @@
     if (u && u.n && o.base !== null && o.base !== undefined) l.push("Dopo giorni come oggi il prezzo era più alto nel <b>" + fmt(u.pPositivi, 0) + "%</b> dei casi, contro il " + fmt(o.base, 0) + "% di un giorno qualsiasi" + (o.vantaggio !== null && o.vantaggio !== undefined ? " (vantaggio " + sg(o.vantaggio, 0) + " punti)" : "") + ".");
     else l.push("Lo storico non basta per confrontare questo titolo con il solito.");
     var av = [];
-    if (o.regimeSfavorevole) av.push("mercato generale debole"); if (o.trimestraleInArrivo) av.push("trimestrale in arrivo"); if (o.datiIncerti) av.push("dati incerti"); if (o.fragile === true) av.push("segnale fragile");
+    if (o.regimeSfavorevole) av.push("mercato generale debole"); if (o.trimestraleInArrivo) av.push("trimestrale in arrivo"); if (o.datiIncerti) av.push("dati incerti"); if (o.fragile === true) av.push("segnale fragile"); if (o.falsoPositivo) av.push("potrebbe essere solo fortuna"); if (o.volatilitaAlta) av.push("mercato molto agitato"); if (o.liquiditaBassa) av.push("pochi scambi");
     l.push(av.length ? "<b>Attenzione:</b> " + av.join(", ") + "." : "È una statistica sul passato, non una previsione.");
     return "<ol class=\"riass\">" + l.map(function (x) { return "<li>" + x + "</li>"; }).join("") + "</ol>";
   }
@@ -1202,9 +1362,14 @@
       '<div class="r-bd" style="margin:6px 0">' + badgeVerdetto(o) + '<button type="button" class="num" data-g="punteggio">Punteggio ' + o.punteggio100 + '</button><button type="button" class="tag aff-' + esc(o.affidabilita) + '" data-g="affidabilita">affidabilità ' + esc(o.affidabilita) + "</button>" + segnaliTitolo(a, o) +
       '<button type="button" class="stella' + (pref ? " on" : "") + '" id="stellaPannello" aria-pressed="' + pref + '">' + (pref ? "★ Nei preferiti" : "☆ Aggiungi ai preferiti") + "</button></div>" +
       (a.avvisi && a.avvisi.length ? '<div class="nota">' + a.avvisi.map(esc).join("<br>") + "</div>" : "") +
+      (function () { var g = giudizio(a, o); return '<div class="vista p-box-' + g.c + '"><span class="pallino p-' + g.c + '" aria-hidden="true"></span><div><b>Il mio punto di vista: ' + esc(g.t) + "</b><br>" + esc(g.f) + '<div class="muted">È un\'opinione statistica sul passato, non un consiglio né una previsione.</div></div></div>'; })() +
+      (o.orizzontiInContrasto ? '<div class="nota">Attenzione: gli orizzonti sono in contrasto (uno favorevole e uno sfavorevole). Prima di decidere guarda tutti e tre.</div>' : "") +
       "<h3>Riassunto</h3>" + riassunto(a, o, u) +
+      (function () { var x = fraseSpy(o), y = fraseCambio(a), z = fraseIncertezza(o, u); return (z ? '<div class="muted">' + z + "</div>" : "") + (x ? '<div class="muted">' + x + "</div>" : "") + (y ? '<div class="muted">' + y + "</div>" : ""); })() +
+      '<div id="storicoV" class="muted" style="margin:6px 0"></div>' +
       "<h3>Perché</h3>" + perche(a, o, u) +
       '<details class="esperti"><summary><b>Per esperti</b> (indicatori, probabilità, simulazioni, grafico)</summary>' + esperti(a, o, u) + "</details>";
+    caricaStorico(t);
     $("stellaPannello").onclick = function () { if (S.pref[t]) delete S.pref[t]; else S.pref[t] = 1; salvaPreferenze(); renderPannello(); renderClassifica(); };
   }
   function chiudiPannello() {
@@ -1300,6 +1465,7 @@
     S.rif = rif;
     var diversi = tickers.filter(function (t) { return rif && S.ris[t].ultima && S.ris[t].ultima !== rif; });
     $("boxIpervenduti").innerHTML = "";
+    renderCambi(); renderTop3();
     renderClassifica();
     if (S.apri) renderPannello();
     var errori = S.wl.map(function (x) { return x.ticker; }).filter(function (t) { return S.err[t]; });
@@ -1353,11 +1519,12 @@
       $("boxCalib").innerHTML = hc;
     }
     var lista = (ag && ag.data) || [];
-    $("boxAggregate").innerHTML = lista.length ? "<table><thead><tr><th>Regola</th><th>Titoli</th><th>Casi</th><th>Successo</th><th>Intervallo 95%</th></tr></thead><tbody>" +
+    $("boxAggregate").innerHTML = lista.length ? "<table><thead><tr><th>Regola</th><th>Titoli</th><th>Casi</th><th>Successo</th><th>Intervallo 95%</th><th>Rend. medio</th><th>Giorno qualsiasi</th></tr></thead><tbody>" +
       lista.map(function (r) {
         var n = r.vinti + r.persi + r.scaduti, ww = wilson(r.vinti, n);
-        return "<tr><td>" + (r.tipo === "trend" ? "Trend rialzista" : "Dopo ribasso") + "</td><td>" + r.titoli + "</td><td>" + n + "</td><td>" + (n ? fmt(r.vinti / n * 100, 0) + "%" : "n/d") + "</td><td>" + (ww ? fmt(ww.low, 0) + "–" + fmt(ww.high, 0) + "%" : "n/d") + "</td></tr>";
-      }).join("") + "</tbody></table>" : "Ancora nessun dato: si riempie man mano che i titoli vengono analizzati.";
+        return "<tr><td>" + (r.tipo === "trend" ? "Trend rialzista" : "Dopo ribasso") + "</td><td>" + r.titoli + "</td><td>" + n + "</td><td>" + (n ? fmt(r.vinti / n * 100, 0) + "%" : "n/d") + "</td><td>" + (ww ? fmt(ww.low, 0) + "–" + fmt(ww.high, 0) + "%" : "n/d") + "</td><td>" + (r.rend_medio === null || r.rend_medio === undefined ? "n/d" : sg(r.rend_medio, 1) + "%") + "</td><td>" +
+          (r.caso_pct === null || r.caso_pct === undefined ? "n/d" : fmt(r.caso_pct, 0) + "% · " + sg(r.caso_medio, 1) + "%") + "</td></tr>";
+      }).join("") + "</tbody></table>" + '<div class="muted" style="margin-top:8px"><b>Giorno qualsiasi</b> = stessa regola (+8% / −8% / 40 giorni) ma entrando in un giorno scelto a caso. Se il segnale non fa meglio di questa colonna, per ora non aggiunge informazione. «Successo» da solo non basta: conta anche il guadagno medio.</div>' : "Ancora nessun dato: si riempie man mano che i titoli vengono analizzati.";
   }
   $("btnAggiornaAff").onclick = caricaAffidabilita;
 
@@ -1545,7 +1712,7 @@
   };
 
   avvia();
-  window.__MA_APP = { S: S, analizzaLista: analizzaLista, segnaliUscita: segnaliUscita, dimensiona: dimensiona, renderStato: renderStato, caricaAffidabilita: caricaAffidabilita };
+  window.__MA_APP = { S: S, renderRisultati: renderRisultati, analizzaLista: analizzaLista, segnaliUscita: segnaliUscita, dimensiona: dimensiona, renderStato: renderStato, caricaAffidabilita: caricaAffidabilita };
 })();
 </script>
 </body>

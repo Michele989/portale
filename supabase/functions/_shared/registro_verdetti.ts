@@ -3,6 +3,7 @@
 import type { Barra } from "./analisi.ts";
 import { controllaDati } from "./analisi.ts";
 import { analizzaOrizzonti, ORIZZONTI } from "./orizzonti.ts";
+import { liquidita } from "./confronti.ts";
 import type { DatiGruppo, NomeOrizzonte } from "./orizzonti.ts";
 
 export interface RigaVerdetto {
@@ -16,7 +17,7 @@ export interface Chiusura { id: number; data_esito: string; rendimento: number }
 export function elaboraVerdetti(
   ticker: string, recenti: Barra[], aperti: RigaAperta[], oggi: Date = new Date(),
   gruppo?: Partial<Record<NomeOrizzonte, DatiGruppo | null>>,
-  ctx: { regimeSfavorevole?: boolean; datiIncerti?: boolean } = {},
+  ctx: { regimeSfavorevole?: boolean; datiIncerti?: boolean; volatilitaAlta?: boolean; liquiditaBassa?: boolean } = {},
 ): { nuovi: RigaVerdetto[]; chiusure: Chiusura[] } {
   const cron = recenti.slice().reverse();
   const nuovi: RigaVerdetto[] = [];
@@ -35,7 +36,7 @@ export function elaboraVerdetti(
   const q = controllaDati(recenti, oggi);
   if (!q.gravi) {
     const ultima = cron[cron.length - 1];
-    const studio = analizzaOrizzonti(cron, { datiOk: true, senzaVentaglio: true, gruppo, regimeSfavorevole: ctx.regimeSfavorevole, datiIncerti: ctx.datiIncerti });
+    const studio = analizzaOrizzonti(cron, { datiOk: true, senzaVentaglio: true, gruppo, regimeSfavorevole: ctx.regimeSfavorevole, datiIncerti: ctx.datiIncerti, volatilitaAlta: ctx.volatilitaAlta, liquiditaBassa: liquidita(recenti).bassa });
     for (const nome of Object.keys(ORIZZONTI) as NomeOrizzonte[]) {
       const s = studio[nome];
       if (!s || s.verdetto === "non_valutabile") continue;

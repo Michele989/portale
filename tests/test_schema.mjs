@@ -277,4 +277,20 @@ assert.equal((await db.query(`select count(*)::int n from access_keys where user
   // RLS su TUTTE le tabelle
   assert.deepEqual((await db.query(`select tabelle_senza_rls() t`)).rows.map((x) => x.t).filter(Boolean), [], "tutte le tabelle hanno la RLS");
 }
+// ---- Migliorie gratuite: rendimento medio e riferimento "giorno qualsiasi"; storico verdetti ----
+{
+  await db.query(`delete from backtest_ticker`);
+  await db.query(`insert into backtest_ticker(ticker,tipo,vinti,persi,scaduti,rend_somma,caso_n,caso_vinti,caso_rend_somma) values
+    ('AAA','trend',5,3,2,20,100,40,50),('BBB','trend',1,1,1,-3,50,20,10),('AAA','ribasso',2,2,0,8,100,40,50)`);
+  const ag = await come(a2, async () => (await db.query(`select statistiche_aggregate() t`)).rows[0].t);
+  const tr = ag.find((x) => x.tipo === "trend");
+  assert.equal(Number(tr.rend_medio), Number(((20 - 3) / 13).toFixed(2)), "rendimento medio per segnale");
+  assert.equal(Number(tr.caso_pct), 40, "successo in un giorno qualsiasi (60 su 150)"); assert.equal(Number(tr.caso_medio), 0.4); assert.equal(tr.caso_n, 150);
+  await db.query(`delete from verdetti_orizzonte`);
+  await db.query(`insert into verdetti_orizzonte(ticker,orizzonte,data_verdetto,prezzo,verdetto,modello,versione) values
+    ('ZZZ','medio', current_date - 3,100,'neutro','trend','2.0'),('ZZZ','medio', current_date - 2,100,'favorevole','trend','2.0'),('ZZZ','medio', current_date - 400,100,'sfavorevole','trend','2.0')`);
+  const st = await come(a2, async () => (await db.query(`select storico_verdetti('zzz') t`)).rows[0].t);
+  assert.equal(st.length, 2, "solo gli ultimi 120 giorni"); assert.equal(st[1].v, "favorevole");
+  await db.exec(`set role anon`); await falla(db.query(`select storico_verdetti('ZZZ')`), "anon vietato"); await db.exec(`reset role`);
+}
 console.log("test_schema OK");

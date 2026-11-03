@@ -13,6 +13,7 @@ import { CATALOGO_TICKER } from "../_shared/catalogo_tickers.ts";
 import { elaboraVerdetti } from "../_shared/registro_verdetti.ts";
 import { leggiGruppo, salvaContributo } from "../_shared/gruppo.ts";
 import { soloBarreChiuse } from "../_shared/analisi.ts";
+import { volatilitaMercato } from "../_shared/confronti.ts";
 import { confrontaFonti, conRetry, mercatoDebole, stooq } from "../_shared/provider.ts";
 
 const env = (k: string, d = "") => Deno.env.get(k) ?? d;
@@ -41,8 +42,8 @@ Deno.serve(async (req: Request) => {
   if (!uguali(req.headers.get("x-cron-secret") || "", segreto)) return risposta({ ok: false, errore: "Non autorizzato" }, 401);
   const inizio = new Date().toISOString();
   // regime di mercato: SPY sotto la media a 200 giorni (letto dalla copia salvata, nessuna chiamata in piu')
-  let regime = false;
-  try { const { data } = await sb.from("price_cache").select("dati").eq("ticker", "SPY").maybeSingle(); if (data && data.dati) regime = mercatoDebole(soloBarreChiuse(espandiCache(data.dati))); } catch (_e) { /* senza regime */ }
+  let regime = false, volAlta = false;
+  try { const { data } = await sb.from("price_cache").select("dati").eq("ticker", "SPY").maybeSingle(); if (data && data.dati) { const bs = soloBarreChiuse(espandiCache(data.dati)); regime = mercatoDebole(bs); const v = volatilitaMercato(bs); volAlta = !!(v && v.alta); } } catch (_e) { /* senza regime */ }
   try {
     const riepilogo = await eseguiPrecarica({
       daAggiornare: async (limite) => {
@@ -69,7 +70,7 @@ Deno.serve(async (req: Request) => {
           await segnaIncerti(t, incerti);
           if (incerti) await log("avviso", "dati", "Controllo incrociato: " + t + " differisce dalla seconda fonte");
         }
-        const { nuovi, chiusure } = elaboraVerdetti(t, barre as any, (aperti || []) as any, new Date(), dati, { regimeSfavorevole: regime, datiIncerti: incerti });
+        const { nuovi, chiusure } = elaboraVerdetti(t, barre as any, (aperti || []) as any, new Date(), dati, { regimeSfavorevole: regime, datiIncerti: incerti, volatilitaAlta: volAlta });
         if (nuovi.length) await sb.from("verdetti_orizzonte").upsert(nuovi, { onConflict: "ticker,orizzonte,data_verdetto", ignoreDuplicates: true });
         for (const c of chiusure) await sb.from("verdetti_orizzonte").update({ data_esito: c.data_esito, rendimento: c.rendimento }).eq("id", c.id);
         return { incerti };

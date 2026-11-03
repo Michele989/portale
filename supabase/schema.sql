@@ -438,6 +438,12 @@ create table if not exists public.backtest_ticker (
   primary key (ticker, tipo)
 );
 
+-- 11) Confronto con "un giorno qualsiasi" e rendimento medio nelle statistiche aggregate
+alter table public.backtest_ticker add column if not exists rend_somma numeric not null default 0;
+alter table public.backtest_ticker add column if not exists caso_n integer not null default 0;
+alter table public.backtest_ticker add column if not exists caso_vinti integer not null default 0;
+alter table public.backtest_ticker add column if not exists caso_rend_somma numeric not null default 0;
+
 alter table public.segnali enable row level security;          -- nessuna policy: solo server
 alter table public.backtest_ticker enable row level security;  -- nessuna policy: solo server
 
@@ -498,9 +504,14 @@ stable
 set search_path = public
 as $$
   select coalesce(jsonb_agg(jsonb_build_object(
-    'tipo', tipo, 'titoli', titoli, 'vinti', v, 'persi', p, 'scaduti', s) order by tipo), '[]'::jsonb)
+    'tipo', tipo, 'titoli', titoli, 'vinti', v, 'persi', p, 'scaduti', s,
+    'rend_medio', case when (v + p + s) > 0 then round((rs / (v + p + s))::numeric, 2) end,
+    'caso_pct', case when cn > 0 then round((cv::numeric / cn) * 100, 1) end,
+    'caso_medio', case when cn > 0 then round((crs / cn)::numeric, 2) end,
+    'caso_n', cn) order by tipo), '[]'::jsonb)
   from (
-    select tipo, count(*) titoli, sum(vinti)::int v, sum(persi)::int p, sum(scaduti)::int s
+    select tipo, count(*) titoli, sum(vinti)::int v, sum(persi)::int p, sum(scaduti)::int s,
+           sum(rend_somma) rs, sum(caso_n)::bigint cn, sum(caso_vinti)::bigint cv, sum(caso_rend_somma) crs
       from public.backtest_ticker group by tipo
   ) x;
 $$;
@@ -952,3 +963,21 @@ as $$
 $$;
 revoke all on function public.tabelle_senza_rls() from public, anon, authenticated;
 grant execute on function public.tabelle_senza_rls() to service_role;
+
+-- 12) Storico dei verdetti di un titolo (ultimi 120 giorni), per vedere se il verdetto e' stabile o ballerino
+create or replace function public.storico_verdetti(p_ticker text)
+returns jsonb
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object('o', orizzonte, 'd', data_verdetto, 'v', verdetto) order by data_verdetto, orizzonte), '[]'::jsonb)
+    from (
+      select orizzonte, data_verdetto, verdetto from public.verdetti_orizzonte
+       where ticker = upper(p_ticker) and data_verdetto >= current_date - 120
+       order by data_verdetto desc limit 400
+    ) x;
+$$;
+revoke all on function public.storico_verdetti(text) from public, anon;
+grant execute on function public.storico_verdetti(text) to authenticated, service_role;
