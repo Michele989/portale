@@ -11,7 +11,7 @@ import { creaDati, ErroreServizio } from "../_shared/dati.ts";
 import { leggiGruppo } from "../_shared/gruppo.ts";
 import { analizzaOrizzonti, applicaDeclassamenti } from "../_shared/orizzonti.ts";
 import { mercatoDebole } from "../_shared/provider.ts";
-import { effettoCambio, liquidita, rendimentiTenere, volatilitaMercato } from "../_shared/confronti.ts";
+import { chiusureInEuro, effettoCambio, liquidita, rendimentiTenere, volatilitaMercato } from "../_shared/confronti.ts";
 import type { Barra } from "../_shared/analisi.ts";
 
 const sb = createClient(
@@ -102,10 +102,10 @@ Deno.serve(async (req: Request) => {
       try { const spy = (await datiTitolo("SPY", esauriti)).barre; barreSpy = spy; mercato = statoMercato(spy, "SPY"); regime = mercatoDebole(spy); } catch (_e) { mercato = null; }
     } else { regime = mercatoDebole(barre); barreSpy = barre; }
     // Contesto gratuito: "comprare e tenere" SPY, agitazione del mercato, liquidita' del titolo, effetto cambio euro/dollaro
-    let spyTenere = null, vol = null, cambio = null;
+    let spyTenere = null, vol = null, cambio = null, fxBarre: Barra[] | null = null;
     try { if (barreSpy) { spyTenere = rendimentiTenere(barreSpy); vol = volatilitaMercato(barreSpy); } } catch (_e) { /* ignora */ }
     const liq = liquidita(barre);
-    if (!ticker.includes(".")) { try { cambio = effettoCambio((await datiTitolo("EURUSD", esauriti)).barre); } catch (_e) { cambio = null; } }
+    if (!ticker.includes(".")) { try { fxBarre = (await datiTitolo("EURUSD", esauriti)).barre; cambio = effettoCambio(fxBarre); } catch (_e) { cambio = null; fxBarre = null; } }
     const analisi = analizzaSerie(barre, opz, { mercato: ticker === "SPY" ? statoMercato(barre, "SPY") : mercato });
     if (!analisi) throw new ErroreServizio(404, "DATI_INSUFFICIENTI", "Storico insufficiente per " + ticker);
     await registra(ticker, barre, analisi); // registro segnali e statistiche: non blocca mai l'analisi
@@ -113,7 +113,8 @@ Deno.serve(async (req: Request) => {
     let orizzonti = null;
     try {
       const { gruppo, dati } = await leggiGruppo(sb, ticker, barre);
-      orizzonti = analizzaOrizzonti(barre.slice().reverse(), { datiOk: !analisi.qualita.gravi, gruppo: dati, nomeGruppo: NOMI_GRUPPO[gruppo] || gruppo, regimeSfavorevole: regime, datiIncerti: !!r.incerti, spy: spyTenere, volatilitaAlta: !!(vol && vol.alta), liquiditaBassa: liq.bassa });
+      const cronOz = barre.slice().reverse();
+      orizzonti = analizzaOrizzonti(cronOz, { chiusureEur: chiusureInEuro(cronOz, fxBarre), datiOk: !analisi.qualita.gravi, gruppo: dati, nomeGruppo: NOMI_GRUPPO[gruppo] || gruppo, regimeSfavorevole: regime, datiIncerti: !!r.incerti, spy: spyTenere, volatilitaAlta: !!(vol && vol.alta), liquiditaBassa: liq.bassa });
       const { data: decl } = await sb.from("modelli_declassati").select("modello, orizzonte");
       if (orizzonti && decl && decl.length) orizzonti = applicaDeclassamenti(orizzonti, decl);
     } catch (_e) { orizzonti = null; }

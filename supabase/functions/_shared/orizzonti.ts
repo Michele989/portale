@@ -86,6 +86,7 @@ export interface StudioOrizzonte {
   datiIncerti: boolean;
   fragile: boolean | null; // il segnale cambia spostando di poco i parametri (SMA 45/55, RSI 30/40)
   vantaggioMin99: number | null; // come vantaggioMin ma al 99% (controllo falsi positivi)
+  inEuro: boolean; // rendimenti, vantaggio e verdetto calcolati in euro (cambio EUR/USD incluso)
   falsoPositivo: boolean; // passa al 95% ma non al 99%: potrebbe essere fortuna, il verdetto resta neutro
   volatilitaAlta: boolean;
   liquiditaBassa: boolean;
@@ -359,6 +360,7 @@ export interface OpzioniOrizzonti {
   volatilitaAlta?: boolean; // volatilita' del mercato molto alta: affidabilita' ridotta
   liquiditaBassa?: boolean; // pochi scambi: prezzi meno affidabili
   controlloFalsiPositivi?: boolean; // default true: il vantaggio deve reggere anche al 99%
+  chiusureEur?: number[] | null; // chiusure convertite in euro (stessa lunghezza di cron): se presenti, i rendimenti sono IN EURO
 }
 
 export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Record<NomeOrizzonte, StudioOrizzonte> {
@@ -368,6 +370,8 @@ export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Re
   const sma20 = seriesMedia(c, 20), sma50 = seriesMedia(c, 50), sma200 = seriesMedia(c, 200);
   const rsi = c.map((_, i) => rsiA(c, i, 14));
   const adx = calcolaADX(cron.map((x) => x.h).reverse(), cron.map((x) => x.l).reverse(), c.slice().reverse(), 14);
+  const ce = opz.chiusureEur && opz.chiusureEur.length === n ? opz.chiusureEur : c; // serie su cui si misurano i rendimenti futuri
+  const inEuro = ce !== c;
   const rend = (i: number, g: number) => (i - g >= 0 ? c[i] / c[i - g] - 1 : null);
 
   // massimo delle ultime 252 sedute: distanza dal picco
@@ -461,10 +465,10 @@ export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Re
     const conMax = !opz.senzaVentaglio;
     const kOra = rimbOra ? PROFILO_RIMBALZO : chiave(nome, ultimo);
     for (let i = 1; i + h <= ultimo; i++) {
-      const ret = c[i + h] / c[i] - 1;
+      const ret = ce[i + h] / ce[i] - 1;
       rTutti.push(ret); iTutti.push(i);
       let mx = 0;
-      if (conMax) { let m = -Infinity; for (let j = i + 1; j <= i + h; j++) if (c[j] > m) m = c[j]; mx = m / c[i] - 1; mTutti.push(mx); }
+      if (conMax) { let m = -Infinity; for (let j = i + 1; j <= i + h; j++) if (ce[j] > m) m = ce[j]; mx = m / ce[i] - 1; mTutti.push(mx); }
       if (kOra !== null && (rimbOra ? kRimb(i) : chiave(nome, i)) === kOra) { rSimili.push(ret); iSimili.push(i); if (conMax) mSimili.push(mx); }
     }
     const tutti = statistiche(rTutti, iTutti, h, conMax ? mTutti : undefined);
@@ -576,9 +580,9 @@ export function analizzaOrizzonti(cron: Barra[], opz: OpzioniOrizzonti = {}): Re
       nome, etichetta, giorni: h, punteggio, criteri: cr, verdetto, affidabilita: affid,
       storico: { tutti, simili, usato: usaSimili ? "simili" : "tutti", profilo: descrizioneProfilo(nome, kOra) },
       modello: rimbOra ? "rimbalzo" : "trend", gruppo: gr, confermaGruppo: conferma, confrontoGruppo, ampiezza95: ampiezza,
-      ventaglio: opz.senzaVentaglio ? null : ventaglio(c, h),
+      ventaglio: opz.senzaVentaglio ? null : ventaglio(ce, h),
       motivi,
-      versione: VERSIONE_MODELLO, base, vantaggio, vantaggioMin, vantaggioMin99, falsoPositivo, volatilitaAlta: volAlta, liquiditaBassa: liqBassa,
+      versione: VERSIONE_MODELLO, base, vantaggio, vantaggioMin, vantaggioMin99, falsoPositivo, inEuro, volatilitaAlta: volAlta, liquiditaBassa: liqBassa,
       confrontoSpy: (() => { const sp = opz.spy ? opz.spy[nome] : null; if (!sp || sp.mediana === null) return null; return { pPositivi: sp.pPositivi, mediana: sp.mediana, batte: stat.mediana === null || stat.pPositivi === null || sp.pPositivi === null ? null : (stat.mediana as number) > sp.mediana && (stat.pPositivi as number) > sp.pPositivi }; })(),
       orizzontiInContrasto: false, pShrink, oos,
       regimeSfavorevole: regime, trimestraleInArrivo: trim, datiIncerti: incerti, fragile: frag,

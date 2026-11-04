@@ -25,8 +25,8 @@ const DATI = (t) => t === "TSLA" || t === "ARKK" ? serie(900, 7, 0.0006, 0.012) 
 assert.equal(A.analizzaSerie(DATI("TSLA"), { tp: 8, sl: 8, comm: 0.2 }).stato, "ipervenduto", "TSLA sintetico ipervenduto");
 
 // ---------- supabase finto ----------
-function nuovoDb() { return { profiles: [], admins: [], access_keys: [], watchlist: [], portfolio: [], impostazioni_rischio: [] }; }
-const CHIAVI_UNICHE = { watchlist: ["user_id", "ticker"], portfolio: ["user_id", "ticker"], impostazioni_rischio: ["user_id"] };
+function nuovoDb() { return { profiles: [], admins: [], access_keys: [], watchlist: [], portfolio: [], impostazioni_rischio: [], prova_senza_soldi: [], verdetti_visti: [], cambi_verdetto: [] }; }
+const CHIAVI_UNICHE = { watchlist: ["user_id", "ticker"], portfolio: ["user_id", "ticker"], impostazioni_rischio: ["user_id"], prova_senza_soldi: ["user_id", "ticker"], verdetti_visti: ["user_id", "ticker"] };
 function creaSb(db, ctx) {
   const listeners = [];
   ctx.emit = (ev) => listeners.forEach((f) => f(ev));
@@ -249,17 +249,17 @@ assert.match(testo(d, "boxStato"), /Ti restano 7 usi su 20/, "contatore aggiorna
   assert.match(testo(d, "boxTop3"), /Le più solide oggi/); assert.match(testo(d, "boxTop3"), /nessun titolo della tua lista ha il pallino verde/, "senza verdi: messaggio onesto");
   // rendo "solido" VOO e SPY (stessa serie: correlazione alta) per provare il riquadro
   const sol = (t) => { const o = S2.ris[t].orizzonti[S2.orizzonte]; Object.assign(o, { verdetto: "favorevole", affidabilita: "alta", fragile: false, regimeSfavorevole: false, datiIncerti: false, punteggio100: 82, vantaggio: 6, oos: { esito: "conferma" }, base: 55, confrontoSpy: { pPositivi: 58, mediana: 1.2, batte: true } }); S2.ris[t].contesto = { cambio: { orizzonti: { breve: { p10: -3, mediana: 0, p90: 3 }, medio: { p10: -4, mediana: 0, p90: 4 }, lungo: { p10: -8, mediana: 0, p90: 8 } } } }; };
-  sol("VOO"); sol("SPY"); S2.ris.SPY.serie = S2.ris.VOO.serie;
+  sol("VOO"); sol("SPY"); S2.ris.VOO.orizzonti[S2.orizzonte].inEuro = true; S2.ris.SPY.serie = S2.ris.VOO.serie;
   APP.renderRisultati();
   const t3 = testo(d, "boxTop3");
   assert.match(t3, /VOO[\s\S]*entro circa [\d ]*(mese|mesi|anno)[\s\S]*nell'80% dei casi tra/, "stima di tempo con intervallo");
-  assert.match(t3, /Tenere l'indice SPY[\s\S]*ha fatto meglio/, "confronto con SPY"); assert.match(t3, /cambio può spostare il risultato/, "effetto cambio");
+  assert.match(t3, /Tenere l'indice SPY[\s\S]*ha fatto meglio/, "confronto con SPY"); assert.match(t3, /Rendimenti calcolati in euro[\s\S]*già incluso nel verdetto/, "cambio incluso nel verdetto"); assert.match(t3, /Calcolato in dollari/, "senza cambio: lo dice"); assert.match(t3, /\(in euro\)/);
   assert.match(t3, /si muovono in modo molto simile/, "avviso di concentrazione");
   assert.ok(DOC.querySelectorAll("#boxTop3 .top3").length <= 3);
   click(d, DOC.querySelector('#boxTop3 [data-vai="VOO"]')); assert.ok(!$(d, "pannello").classList.contains("hidden"), "dal riquadro si apre il dettaglio"); click(d, $(d, "chiudiPannello"));
   click(d, DOC.querySelector("#boxTop3 [data-g=verdetto]")); assert.ok(!$(d, "popover").classList.contains("hidden"), "badge cliccabile anche qui"); d.window.document.dispatchEvent(new d.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  click(d, $(d, "btnProva")); assert.match(testo(d, "boxTop3"), /La mia prova senza soldi[\s\S]*VOO/);
-  click(d, $(d, "btnProvaAzzera")); assert.ok(!/La mia prova/.test(testo(d, "boxTop3")), "prova azzerata");
+  click(d, $(d, "btnProva")); await attendi(40); assert.match(testo(d, "boxTop3"), /La mia prova senza soldi[\s\S]*VOO/);
+  click(d, $(d, "btnProvaAzzera")); await attendi(30); assert.ok(!/La mia prova/.test(testo(d, "boxTop3")), "prova azzerata");
   // il pannello mostra: incertezza, confronto SPY, storico (stabile / ballerino)
   ctx.storico = [{ o: S2.orizzonte, d: "2026-09-01", v: "neutro" }, { o: S2.orizzonte, d: "2026-09-20", v: "favorevole" }, { o: S2.orizzonte, d: "2026-10-01", v: "neutro" }, { o: S2.orizzonte, d: "2026-10-10", v: "favorevole" }, { o: S2.orizzonte, d: "2026-10-20", v: "neutro" }];
   click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]'));
@@ -270,14 +270,22 @@ assert.match(testo(d, "boxStato"), /Ti restano 7 usi su 20/, "contatore aggiorna
   S2.ris.VOO.orizzonti.breve.verdetto = "favorevole"; S2.ris.VOO.orizzonti.lungo.verdetto = "sfavorevole"; for (const k of ["breve", "medio", "lungo"]) S2.ris.VOO.orizzonti[k].orizzontiInContrasto = true;
   click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]')); assert.match(testo(d, "pannelloCorpo"), /orizzonti sono in contrasto/); click(d, $(d, "chiudiPannello"));
   // cosa e' cambiato: un verdetto diverso dall'analisi precedente viene segnalato
-  const prima = JSON.parse(d.window.localStorage.getItem(Object.keys(d.window.localStorage).find((k) => k.startsWith("ma_vprec_"))) || "{}");
-  assert.ok(prima.VOO, "verdetti precedenti salvati");
-  const kk = Object.keys(d.window.localStorage).find((k) => k.startsWith("ma_vprec_"));
-  const vp = JSON.parse(d.window.localStorage.getItem(kk)); vp.VOO = { breve: "favorevole", medio: "favorevole", lungo: "favorevole" }; d.window.localStorage.setItem(kk, JSON.stringify(vp));
+  await attendi(40);
+  const mio = S2.utente.id;
+  assert.ok(db.verdetti_visti.some((x) => x.user_id === mio && x.ticker === "VOO"), "verdetti visti salvati sul server");
+  S2.vprec.VOO = { breve: "favorevole", medio: "favorevole", lungo: "favorevole" };
   S2.chiave.usi_rimasti = Math.max(S2.chiave.usi_rimasti, 5); db.access_keys[0].usi_rimasti = Math.max(db.access_keys[0].usi_rimasti, 5);
   await APP.analizzaLista(["VOO"]);
   assert.match(testo(d, "boxCambi"), /Cosa è cambiato[\s\S]*VOO[\s\S]*Favorevole →/, "cambio di verdetto segnalato");
-  click(d, $(d, "btnCambiOk")); assert.equal(testo(d, "boxCambi"), "", "nascondi");
+  assert.ok(db.cambi_verdetto.length >= 1 && db.cambi_verdetto.every((x) => x.user_id === mio), "cambi salvati sul server");
+  // da un altro dispositivo (nuova pagina, stesso account): prova e cambi ci sono ancora
+  click(d, $(d, "btnProva")); await attendi(40); assert.ok(db.prova_senza_soldi.length >= 1, "prova salvata sul server");
+  const ctx2 = { utenti: [...ctx.utenti], chiamate: [], session: ctx.session };
+  const d2 = await carica("index.html", { db, ctx: ctx2 }); await attendi(120);
+  assert.match(testo(d2, "boxCambi"), /Cosa è cambiato[\s\S]*VOO/, "cosa e' cambiato visibile dall'altro dispositivo");
+  assert.ok(d2.window.__MA_APP.S.prova.length >= 1, "prova visibile dall'altro dispositivo");
+  click(d, $(d, "btnCambiOk")); await attendi(30); assert.equal(testo(d, "boxCambi"), "", "nascondi"); assert.equal(db.cambi_verdetto.length, 0, "cancellati anche dal server");
+  click(d, $(d, "btnProvaAzzera")); await attendi(30); assert.equal(db.prova_senza_soldi.length, 0, "prova azzerata sul server");
 }
 // FASE 2: riga compatta con verdetto, punteggio, vantaggio, affidabilita', sparkline e badge
 {

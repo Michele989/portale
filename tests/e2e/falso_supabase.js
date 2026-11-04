@@ -1,7 +1,7 @@
 // Supabase finto che gira nel browser (solo per i test e2e): memoria + fixture delle analisi.
 (function () {
   var P = new URLSearchParams(location.search), SC = P.get("scenario") || "";
-  var db = { profiles: [{ user_id: "u1", username: "mario", email: "m@x.it" }], admins: [], watchlist: [], portfolio: [], impostazioni_rischio: [],
+  var db = { profiles: [{ user_id: "u1", username: "mario", email: "m@x.it" }], admins: [], watchlist: [], portfolio: [], impostazioni_rischio: [], prova_senza_soldi: [], verdetti_visti: [], cambi_verdetto: [],
     access_keys: [{ id: 1, user_id: "u1", stato: "attiva", usi_totali: 20, usi_rimasti: SC === "esauriti" ? 0 : 20, scade_il: null }] };
   var sessione = SC === "loggato" || SC === "esauriti" ? { access_token: "t", user: { id: "u1", email: "m@x.it" } } : null, ascolti = [];
   function tab(nome) {

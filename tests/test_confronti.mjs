@@ -80,6 +80,29 @@ function regimi(n, seed, blocco = 120) {
   const vs = ["breve", "medio", "lungo"].map((k) => b[k].verdetto);
   assert.equal([...flags][0], vs.includes("favorevole") && vs.includes("sfavorevole"));
 }
+// CAMBIO NEL VERDETTO: i rendimenti diventano in euro
+{
+  const cron = regimi(1300, 7, 120);
+  const fxSale = barre(2000, 11, 0.0015, 0.0005, 1, 2018); // EUR/USD sale: il dollaro perde valore
+  const fxStabile = barre(2000, 11, 0, 0.0005, 1, 2018);
+  const ultimaData = cron[cron.length - 1].d, ritaglia = (fx) => fx.filter((b) => b.d <= ultimaData);
+  const eur = C.chiusureInEuro(cron, ritaglia(fxSale));
+  assert.equal(eur.length, cron.length); assert.ok(eur.every((x) => x > 0));
+  assert.equal(C.chiusureInEuro(cron, null), null); assert.equal(C.chiusureInEuro(cron, barre(100, 1, 0)), null, "cambio troppo corto");
+  const vecchio = barre(1400, 11, 0, 0.0005, 1, 2010).filter((b) => b.d <= "2019-06-01"); assert.equal(C.chiusureInEuro(cron, vecchio), null, "cambio non aggiornato");
+  const usd = O.analizzaOrizzonti(cron, { senzaVentaglio: true });
+  const inEur = O.analizzaOrizzonti(cron, { senzaVentaglio: true, chiusureEur: eur });
+  assert.equal(usd.medio.inEuro, false); assert.equal(inEur.medio.inEuro, true);
+  assert.ok(inEur.medio.storico.tutti.mediana < usd.medio.storico.tutti.mediana, "euro che sale: rendimento tipico in euro piu' basso");
+  assert.ok(inEur.medio.storico.tutti.pPositivi < usd.medio.storico.tutti.pPositivi, "meno periodi positivi in euro");
+  // cambio piatto: stessi risultati (a meno di rumore minimo)
+  const piatto = O.analizzaOrizzonti(cron, { senzaVentaglio: true, chiusureEur: C.chiusureInEuro(cron, ritaglia(fxStabile)) });
+  assert.ok(Math.abs(piatto.medio.storico.tutti.mediana - usd.medio.storico.tutti.mediana) < 1.5, "cambio piatto: quasi nessuna differenza");
+  // lunghezza diversa: ignorato (resta in dollari)
+  assert.equal(O.analizzaOrizzonti(cron, { senzaVentaglio: true, chiusureEur: [1, 2, 3] }).medio.inEuro, false);
+  // i criteri sul trend restano sul prezzo originale: stessi criteri
+  assert.deepEqual(usd.medio.criteri, inEur.medio.criteri);
+}
 // il registro notturno passa i nuovi controlli senza errori
 {
   const r = elaboraVerdetti("ABC", barre(1300, 4, 0.0004), [], new Date("2026-10-29"), undefined, { volatilitaAlta: true });

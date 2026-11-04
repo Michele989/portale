@@ -17,8 +17,8 @@
 - Controllo falsi positivi (99%), confronto con SPY, volatilità, liquidità, cambio EUR/USD (informativo), orizzonti in contrasto, dati anomali.
 - Riquadro «Le più solide oggi», pallino, prova senza soldi, «cosa è cambiato», storico verdetti.
 - Backtest cieco 2022 (`tests/backtest_cieco.mjs`): pronto e testato su dati finti; NON ancora eseguito su dati reali (serve la chiave Twelve Data, circa 8 minuti ogni 60 titoli).
-- Limite noto: il cambio EUR/USD non entra nel verdetto, è solo mostrato; vale solo per ticker senza punto (titoli USA).
-- Limite noto: la «prova senza soldi» e il «cosa è cambiato» sono salvati solo nel browser (se cambi telefono ripartono da zero).
+- Cambio EUR/USD ora incluso nel verdetto (rendimenti in euro) per i ticker senza punto. Limiti: il confronto con il gruppo e il registro dei verdetti restano in valuta originale; se il cambio non è disponibile il calcolo torna in dollari (la scheda lo dice).
+- «Prova senza soldi» e «cosa è cambiato» ora sono salvati sul server (tabelle con RLS, cancellati con l'account, inclusi nell'esportazione).
 - Non fatto: avvisi per email quando cambia il verdetto (oggi c'è solo l'avviso dentro il sito).
 
 ## Rifinitura

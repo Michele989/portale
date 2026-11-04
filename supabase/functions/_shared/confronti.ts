@@ -76,3 +76,22 @@ export function effettoCambio(fx: Barra[]): EffettoCambio | null {
   const dollaro = (c[ult - 252] / c[ult] - 1) * 100; // dollaro più forte se EUR/USD scende
   return { coppia: "EUR/USD", variazione12m: dollaro, orizzonti };
 }
+
+// Chiusure del titolo convertite in EURO, allineate alla serie CRONOLOGICA `cron` (dal più vecchio al più recente).
+// fx = barre EUR/USD dalla più recente (dollari per 1 euro). Per i giorni senza cambio si usa l'ultimo noto prima
+// di quella data (o il primo disponibile). Restituisce null se il cambio non copre bene l'ultimo periodo.
+export function chiusureInEuro(cron: Barra[], fx: Barra[] | null | undefined): number[] | null {
+  if (!fx || fx.length < 300 || !cron.length) return null;
+  const f = fx.slice().reverse().filter((b) => b.c > 0); // cronologico
+  if (f.length < 300) return null;
+  const ultimoCron = cron[cron.length - 1].d, ultimoFx = f[f.length - 1].d;
+  const giorniScarto = (new Date(ultimoCron + "T00:00:00Z").getTime() - new Date(ultimoFx + "T00:00:00Z").getTime()) / 86400000;
+  if (giorniScarto > 10) return null; // cambio non aggiornato
+  const out: number[] = [];
+  let k = 0;
+  for (const b of cron) {
+    while (k + 1 < f.length && f[k + 1].d <= b.d) k++;
+    out.push(b.c / f[k].c);
+  }
+  return out;
+}

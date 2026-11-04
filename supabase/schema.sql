@@ -929,7 +929,9 @@ begin
     'portafoglio', coalesce((select jsonb_agg(to_jsonb(f) - 'user_id') from public.portfolio f where f.user_id = u), '[]'::jsonb),
     'impostazioni', (select to_jsonb(i) - 'user_id' - 'avvisi_token' from public.impostazioni_rischio i where i.user_id = u),
     'chiavi', coalesce((select jsonb_agg(to_jsonb(k) - 'user_id') from public.access_keys k where k.user_id = u), '[]'::jsonb),
-    'analisi_effettuate', coalesce((select jsonb_agg(to_jsonb(a) - 'user_id') from public.analisi_utente a where a.user_id = u), '[]'::jsonb)
+    'analisi_effettuate', coalesce((select jsonb_agg(to_jsonb(a) - 'user_id') from public.analisi_utente a where a.user_id = u), '[]'::jsonb),
+    'prova_senza_soldi', coalesce((select jsonb_agg(to_jsonb(x) - 'user_id') from public.prova_senza_soldi x where x.user_id = u), '[]'::jsonb),
+    'cambi_verdetto', coalesce((select jsonb_agg(to_jsonb(x) - 'user_id') from public.cambi_verdetto x where x.user_id = u), '[]'::jsonb)
   );
 end $$;
 revoke all on function public.esporta_miei_dati() from public, anon;
@@ -981,3 +983,55 @@ as $$
 $$;
 revoke all on function public.storico_verdetti(text) from public, anon;
 grant execute on function public.storico_verdetti(text) to authenticated, service_role;
+
+-- 13) Dati personali che ora seguono l'utente su ogni dispositivo (prima erano solo nel browser):
+--     "prova senza soldi", ultimi verdetti visti e "cosa e' cambiato". Ognuno vede solo i propri.
+create table if not exists public.prova_senza_soldi (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  ticker text not null check (ticker ~ '^[A-Z0-9.-]{1,12}$'),
+  prezzo numeric not null check (prezzo > 0),
+  prezzo_spy numeric check (prezzo_spy > 0),
+  data_prova date not null default current_date,
+  unique (user_id, ticker)
+);
+create table if not exists public.verdetti_visti (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  ticker text not null check (ticker ~ '^[A-Z0-9.-]{1,12}$'),
+  breve text, medio text, lungo text,
+  aggiornato_il timestamptz not null default now(),
+  primary key (user_id, ticker)
+);
+create table if not exists public.cambi_verdetto (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  ticker text not null check (ticker ~ '^[A-Z0-9.-]{1,12}$'),
+  orizzonte text not null check (orizzonte in ('breve', 'medio', 'lungo')),
+  da text not null, a text not null,
+  data_cambio date not null default current_date
+);
+create index if not exists cambi_verdetto_utente_idx on public.cambi_verdetto (user_id, data_cambio desc);
+
+alter table public.prova_senza_soldi enable row level security;
+alter table public.verdetti_visti enable row level security;
+alter table public.cambi_verdetto enable row level security;
+
+drop policy if exists prova_own on public.prova_senza_soldi;
+create policy prova_own on public.prova_senza_soldi for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists visti_own on public.verdetti_visti;
+create policy visti_own on public.verdetti_visti for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists cambi_own on public.cambi_verdetto;
+create policy cambi_own on public.cambi_verdetto for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- limite di spazio: al massimo 200 cambi e 90 giorni di storia per utente
+create or replace function public.pulisci_cambi() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.cambi_verdetto
+   where user_id = new.user_id
+     and (data_cambio < current_date - 90
+          or id in (select id from public.cambi_verdetto where user_id = new.user_id order by id desc offset 200));
+  return new;
+end $$;
+drop trigger if exists cambi_pulizia on public.cambi_verdetto;
+create trigger cambi_pulizia after insert on public.cambi_verdetto for each row execute function public.pulisci_cambi();

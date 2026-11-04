@@ -293,4 +293,34 @@ assert.equal((await db.query(`select count(*)::int n from access_keys where user
   assert.equal(st.length, 2, "solo gli ultimi 120 giorni"); assert.equal(st[1].v, "favorevole");
   await db.exec(`set role anon`); await falla(db.query(`select storico_verdetti('ZZZ')`), "anon vietato"); await db.exec(`reset role`);
 }
+// ---- Dati personali sul server: prova senza soldi, verdetti visti, cambi (ognuno vede solo i propri) ----
+{
+  const x1 = await nuovo("pers1@x.it", { username: "pers1" }), x2 = await nuovo("pers2@x.it", { username: "pers2" });
+  await come(x1, async () => {
+    await db.query(`insert into prova_senza_soldi(user_id,ticker,prezzo,prezzo_spy) values ($1,'VOO',100,400)`, [x1]);
+    await db.query(`insert into verdetti_visti(user_id,ticker,breve,medio,lungo) values ($1,'VOO','neutro','favorevole','neutro')`, [x1]);
+    await db.query(`insert into cambi_verdetto(user_id,ticker,orizzonte,da,a) values ($1,'VOO','medio','neutro','favorevole')`, [x1]);
+    await falla(db.query(`insert into prova_senza_soldi(user_id,ticker,prezzo) values ($1,'QQQ',100)`, [x2]), "non si scrive per un altro utente");
+    await falla(db.query(`insert into cambi_verdetto(user_id,ticker,orizzonte,da,a) values ($1,'QQQ','medio','a','b')`, [x2]), "idem cambi");
+    await falla(db.query(`insert into prova_senza_soldi(user_id,ticker,prezzo) values ($1,'voo!',100)`, [x1]), "ticker non valido");
+  });
+  await come(x2, async () => {
+    for (const t of ["prova_senza_soldi", "verdetti_visti", "cambi_verdetto"]) assert.equal((await db.query(`select count(*)::int n from ${t}`)).rows[0].n, 0, t + ": l'altro utente non vede nulla");
+    await db.query(`delete from prova_senza_soldi`); await db.query(`delete from cambi_verdetto`);
+  });
+  await come(x1, async () => {
+    assert.equal((await db.query(`select count(*)::int n from prova_senza_soldi`)).rows[0].n, 1, "il cancella dell'altro non tocca i miei dati");
+    const ex = (await db.query(`select esporta_miei_dati() e`)).rows[0].e;
+    assert.equal(ex.prova_senza_soldi.length, 1); assert.equal(ex.cambi_verdetto.length, 1); assert.equal(ex.prova_senza_soldi[0].user_id, undefined, "nessun id utente nell'export");
+  });
+  // pulizia: oltre 200 cambi o piu' vecchi di 90 giorni vengono eliminati
+  await db.query(`insert into cambi_verdetto(user_id,ticker,orizzonte,da,a,data_cambio) values ($1,'OLD','breve','a','b', current_date - 200)`, [x1]);
+  for (let i = 0; i < 205; i++) await db.query(`insert into cambi_verdetto(user_id,ticker,orizzonte,da,a) values ($1,'NEW','breve','a','b')`, [x1]);
+  const nc = (await db.query(`select count(*)::int n, count(*) filter (where ticker='OLD')::int vecchi from cambi_verdetto where user_id=$1`, [x1])).rows[0];
+  assert.equal(nc.vecchi, 0, "cambi vecchi eliminati"); assert.ok(nc.n <= 201, "al massimo ~200 cambi: " + nc.n);
+  // cancellando l'account spariscono anche questi dati
+  await come(x1, async () => { await db.query(`select elimina_mio_account()`); });
+  for (const t of ["prova_senza_soldi", "verdetti_visti", "cambi_verdetto"]) assert.equal((await db.query(`select count(*)::int n from ${t} where user_id=$1`, [x1])).rows[0].n, 0, t + " svuotata con l'account");
+}
+assert.deepEqual((await db.query(`select tabelle_senza_rls() t`)).rows.map((x) => x.t).filter(Boolean), [], "RLS su tutte le tabelle, comprese le nuove");
 console.log("test_schema OK");
