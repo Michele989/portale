@@ -1,0 +1,28 @@
+name: Validazione
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 1 * *"
+
+jobs:
+  valida:
+    if: github.event_name == 'workflow_dispatch' || vars.BACKUP_ATTIVO == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Installa gli strumenti
+        run: npm install --no-audit --no-fund
+        working-directory: strumenti
+      - name: Esegui la validazione
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node --experimental-strip-types --no-warnings strumenti/valida.mjs
+      - name: Salva il risultato completo
+        uses: actions/upload-artifact@v4
+        with:
+          name: validazione
+          path: validazione.json
