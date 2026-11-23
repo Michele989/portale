@@ -148,3 +148,10 @@ Il precaricamento notturno scarica anche tutti i 420 titoli del catalogo (`_shar
 - Rieseguire `schema.sql` (nuove colonne e funzione `storico_verdetti`) e ridistribuire le funzioni (INSTALLA_FUNZIONI.bat).
 - Nuovo file `supabase/functions/_shared/confronti.ts`; test `test_confronti.mjs`, `test_backtest_cieco.mjs`.
 - Backtest cieco su dati reali: `TWELVEDATA_API_KEY=... node --experimental-strip-types tests/backtest_cieco.mjs 2022` (MAX_TITOLI=60 di default).
+
+## Novembre (2): previsioni a orizzonte fisso e validazione
+- **Notte**: `precarica` scrive per ogni titolo le previsioni (`previsioni`, mai modificate) a 21/63/252 sedute con tre modelli (`base`, `simili`, `bootstrap`; codice in `_shared/previsioni.ts`), valuta quelle maturate (`previsioni_esiti`, ingresso all'apertura di T+1) e registra i segnali (`_shared/registro_segnali.ts`) solo il primo giorno in cui il titolo entra nello stato.
+- **Dati**: la cache ora conserva anche l'apertura (sesta colonna); le copie vecchie ne sono prive e ripiegano sulla chiusura di T+1 finché non vengono riscaricate.
+- **Validazione** (`_shared/validazione.ts`, lanciata da `strumenti/valida.mjs` e dal workflow `Validazione`): eccesso delle regole rispetto alla media dei titoli nella stessa data, bootstrap a blocchi di date, Holm, verifica sul periodo recente, BSS di "simili" contro "base". Scrive su `validazioni` e in `validazione.json`.
+- **Interfaccia**: tabella "Probabilità stimate" nel dettaglio titolo e sezione "Previsioni misurate" nel tab Affidabilità (`valutazione_previsioni`).
+- Test: `test_previsioni.mjs`, `test_validazione.mjs`, nuove parti in `test_schema.mjs` e `test_frontend.mjs`.

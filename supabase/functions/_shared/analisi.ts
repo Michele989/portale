@@ -10,6 +10,7 @@ export interface Barra {
   l: number; // minimo
   c: number; // chiusura
   v: number; // volume (0 se non disponibile)
+  o?: number; // apertura (presente solo nei dati scaricati dopo il 23/11/2026)
 }
 
 export interface EsitoBacktest {
@@ -37,14 +38,14 @@ export function media(a: number[]): number {
 }
 
 // ---- indicatori su serie CRONOLOGICA (dal piu' vecchio al piu' recente) ----
-function smaAt(c: number[], i: number, p: number): number | null {
+export function smaAt(c: number[], i: number, p: number): number | null {
   if (i + 1 < p) return null;
   let s = 0;
   for (let k = i - p + 1; k <= i; k++) s += c[k];
   return s / p;
 }
 
-function rsiAt(c: number[], i: number, p = 14): number | null {
+export function rsiAt(c: number[], i: number, p = 14): number | null {
   if (i < p) return null;
   let g = 0, pd = 0;
   for (let k = i - p + 1; k <= i; k++) {
@@ -203,19 +204,25 @@ export function daTwelveData(values: any[]): Barra[] {
   for (const x of values || []) {
     const c = parseFloat(x.close), h = parseFloat(x.high), l = parseFloat(x.low);
     if (!isFinite(c) || !isFinite(h) || !isFinite(l) || c <= 0) continue;
-    const v = parseFloat(x.volume);
-    out.push({ d: String(x.datetime).slice(0, 10), h, l, c, v: isFinite(v) ? v : 0 });
+    const v = parseFloat(x.volume), o = parseFloat(x.open);
+    const b: Barra = { d: String(x.datetime).slice(0, 10), h, l, c, v: isFinite(v) ? v : 0 };
+    if (isFinite(o) && o > 0) b.o = o;
+    out.push(b);
   }
   return out; // dal piu' recente
 }
 
 export function comprimi(barre: Barra[]): { b: (string | number)[][] } {
-  return { b: barre.map((x) => [x.d, x.h, x.l, x.c, x.v]) };
+  return { b: barre.map((x) => (x.o ? [x.d, x.h, x.l, x.c, x.v, x.o] : [x.d, x.h, x.l, x.c, x.v])) };
 }
 
 export function espandi(dati: any): Barra[] {
   const b: any[][] = dati && Array.isArray(dati.b) ? dati.b : [];
-  return b.map((r) => ({ d: String(r[0]), h: Number(r[1]), l: Number(r[2]), c: Number(r[3]), v: Number(r[4]) }));
+  return b.map((r) => {
+    const x: Barra = { d: String(r[0]), h: Number(r[1]), l: Number(r[2]), c: Number(r[3]), v: Number(r[4]) };
+    if (r.length > 5 && Number(r[5]) > 0) x.o = Number(r[5]);
+    return x;
+  });
 }
 
 export function limita(x: number, min: number, max: number, def: number): number {

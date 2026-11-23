@@ -12,7 +12,9 @@ import { eseguiPrecarica } from "../_shared/precarica.ts";
 import { CATALOGO_TICKER } from "../_shared/catalogo_tickers.ts";
 import { elaboraVerdetti } from "../_shared/registro_verdetti.ts";
 import { leggiGruppo, salvaContributo } from "../_shared/gruppo.ts";
-import { soloBarreChiuse } from "../_shared/analisi.ts";
+import { controllaDati, soloBarreChiuse } from "../_shared/analisi.ts";
+import { aggiornaRegistro } from "../_shared/registro_segnali.ts";
+import { salvaPrevisioni, valutaPrevisioni } from "../_shared/registro_previsioni.ts";
 import { volatilitaMercato } from "../_shared/confronti.ts";
 import { confrontaFonti, conRetry, mercatoDebole, stooq } from "../_shared/provider.ts";
 
@@ -61,6 +63,9 @@ Deno.serve(async (req: Request) => {
         const barre = soloBarreChiuse(barreGrezze as any);
         const { data: aperti } = await sb.from("verdetti_orizzonte").select("id, orizzonte, data_verdetto").eq("ticker", t).is("data_esito", null);
         await salvaContributo(sb, t, barre as any); // alimenta lo studio di gruppo
+        // registro dei segnali su TUTTO l'universo (nuovi segnali + chiusura di quelli aperti) e previsioni a orizzonte fisso
+        await aggiornaRegistro(sb, t, barre as any, controllaDati(barre as any).gravi);
+        try { await salvaPrevisioni(sb, t, barre as any); await valutaPrevisioni(sb, t, barre as any); } catch (_e) { await log("avviso", "previsioni", "Previsioni non salvate per " + t); }
         const { dati } = await leggiGruppo(sb, t, barre as any);
         // controllo incrociato con una seconda fonte (se raggiungibile): differenza > 2% = "dati incerti"
         let incerti = false;

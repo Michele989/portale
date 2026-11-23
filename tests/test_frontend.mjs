@@ -56,6 +56,7 @@ function creaSb(db, ctx) {
       if (nome === "elimina_mio_account") { ctx.eliminato = true; return { data: null }; }
       if (nome === "statistiche_aggregate") return { data: ctx.aggregate || [] };
       if (nome === "storico_verdetti") return { data: ctx.storico || [] };
+      if (nome === "valutazione_previsioni") return { data: ctx.prev || { dal: null, emesse: 0, maturate: 0, modelli: [], calibrazione: [], ultima_validazione: null } };
       if (nome === "username_disponibile") return { data: !db.profiles.some((p) => p.username.toLowerCase() === args.p_username.toLowerCase()) }; return { data: null }; },
     from(tab) {
       let filtri = [], op = "select", payload, opts, ord, lim;
@@ -269,6 +270,15 @@ assert.match(testo(d, "boxStato"), /Ti restano 7 usi su 20/, "contatore aggiorna
   // contrasto fra orizzonti
   S2.ris.VOO.orizzonti.breve.verdetto = "favorevole"; S2.ris.VOO.orizzonti.lungo.verdetto = "sfavorevole"; for (const k of ["breve", "medio", "lungo"]) S2.ris.VOO.orizzonti[k].orizzontiInContrasto = true;
   click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]')); assert.match(testo(d, "pannelloCorpo"), /orizzonti sono in contrasto/); click(d, $(d, "chiudiPannello"));
+  // probabilita' stimate a orizzonte fisso nel dettaglio
+  S2.ris.VOO.probabilita = [
+    { orizzonte: 21, modello: "base", probSu: 0.55, mediana: 1.1, p05: -8, p95: 9, probPerd5: 0.2, probGuad5: 0.25, probPerd10: 0.06, probGuad10: 0.09, nEff: 60, stato: "forte" },
+    { orizzonte: 21, modello: "simili", probSu: 0.61, mediana: 1.5, p05: -7, p95: 10, probPerd5: 0.18, probGuad5: 0.3, probPerd10: 0.05, probGuad10: 0.1, nEff: 25, stato: "forte" },
+    { orizzonte: 21, modello: "bootstrap", probSu: 0.57, mediana: 1.2, p05: -9, p95: 10, probPerd5: 0.2, probGuad5: 0.27, probPerd10: 0.07, probGuad10: 0.1, nEff: 60, stato: "forte" }];
+  click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]'));
+  assert.match(testo(d, "pannelloCorpo"), /Probabilità stimate[\s\S]*1 mese[\s\S]*61%[\s\S]*non previsioni/, "probabilita' stimate: usa 'simili' e avvisa che non sono previsioni");
+  assert.match(testo(d, "pannelloCorpo"), /Confronto dei tre modelli[\s\S]*bootstrap/);
+  click(d, $(d, "chiudiPannello")); delete S2.ris.VOO.probabilita;
   // cosa e' cambiato: un verdetto diverso dall'analisi precedente viene segnalato
   await attendi(40);
   const mio = S2.utente.id;
@@ -586,6 +596,14 @@ ctx.registro = { dal: "2026-09-01", chiusi: 120, aperti: 30, brier: 0.22, brier_
   mesi: [{ mese: "2026-09", n: 50, fav_pct: 65, sfav_pct: 50 }, { mese: "2026-10", n: 70, fav_pct: 70, sfav_pct: 44 }] };
 click(d, $(d, "btnAggiornaAff")); await finche(() => /Dopo «Favorevole»/.test(testo(d, "boxRegistro")), "registro con dati");
 assert.match(testo(d, "boxRegistro"), /68%[\s\S]*47%/); assert.match(testo(d, "boxRegistro"), /Brier score: 0,220[\s\S]*Migliore del riferimento/); assert.ok($(d, "boxRegistro").querySelector("svg"), "andamento nel tempo"); assert.match(testo(d, "boxRegistro"), /-15 punti/, "scarto di calibrazione");
+// nuovo registro delle previsioni: vuoto -> messaggio onesto; con dati -> tabella e BSS; con validazione -> conclusione
+assert.match(testo(d, "boxPrev"), /parte dalla prossima notte/, "previsioni: registro appena nato");
+ctx.prev = { dal: "2026-11-24", emesse: 900, maturate: 300, calibrazione: [],
+  modelli: [{ modello: "base", orizzonte: 21, n: 300, giorni: 12, brier: 0.25, brier_base: 0.25, bss: 0, prob_media: 55, osservato: 53, rend_medio: 0.5 }, { modello: "simili", orizzonte: 21, n: 300, giorni: 12, brier: 0.26, brier_base: 0.25, bss: -0.04, prob_media: 60, osservato: 53, rend_medio: 0.5 }],
+  ultima_validazione: { conclusione: "Nessun vantaggio dimostrabile: le regole non battono il confronto.", generato: "2026-11-25T05:00:00Z", universo: { titoli: 280 },
+    regole: [{ regola: "forte", orizzonte: 21, media: 0.12, ci95: [-0.3, 0.5], pHolm: 0.8, recente: { media: -0.1 } }] } };
+click(d, $(d, "btnAggiornaAff")); await finche(() => /Previsioni registrate/.test(testo(d, "boxPrev")), "previsioni con dati");
+assert.match(testo(d, "boxPrev"), /simili[\s\S]*-0,04|simili[\s\S]*−0,04/); assert.match(testo(d, "boxPrev"), /Poche date diverse/); assert.match(testo(d, "boxPrev"), /Nessun vantaggio dimostrabile/); assert.match(testo(d, "boxPrev"), /Trend rialzista[\s\S]*1 mese/);
 click(d, d.window.document.querySelector('#menu [data-tab="analisi"]'));
 // avviso scorte
 d.window.__MA_APP.S.chiave.usi_rimasti = 3; d.window.__MA_APP.S.chiave.usi_totali = 150; d.window.__MA_APP.renderStato();

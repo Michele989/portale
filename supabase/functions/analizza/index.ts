@@ -6,7 +6,9 @@
 // =========================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { opzioniCors, risposta, tokenDa } from "../_shared/http.ts";
-import { analizzaSerie, limita, statisticheStandard, statoMercato, valutaSegnale } from "../_shared/analisi.ts";
+import { analizzaSerie, limita, statoMercato } from "../_shared/analisi.ts";
+import { aggiornaRegistro } from "../_shared/registro_segnali.ts";
+import { previsioniTitolo } from "../_shared/previsioni.ts";
 import { creaDati, ErroreServizio } from "../_shared/dati.ts";
 import { leggiGruppo } from "../_shared/gruppo.ts";
 import { analizzaOrizzonti, applicaDeclassamenti } from "../_shared/orizzonti.ts";
@@ -25,32 +27,6 @@ const CACHE_ORE = Number(Deno.env.get("CACHE_ORE") ?? "20");
 const STORICO_GIORNI = Number(Deno.env.get("STORICO_GIORNI") ?? "5000");
 
 const { datiTitolo } = creaDati(sb, { tdKey: TD_KEY, cacheOre: CACHE_ORE, storicoGiorni: STORICO_GIORNI });
-
-// Registro dei segnali reali e conteggi per le statistiche aggregate (errori ignorati).
-async function registra(ticker: string, barre: Barra[], a: any): Promise<void> {
-  try {
-    if (a.qualita && a.qualita.gravi) return; // dati dubbi: nulla viene registrato
-    const st = statisticheStandard(barre);
-    const ora = new Date().toISOString();
-    await sb.from("backtest_ticker").upsert([
-      { ticker, tipo: "trend", vinti: st.trend.vinti, persi: st.trend.persi, scaduti: st.trend.scaduti, rend_somma: (st.trend.attesa ?? 0) * st.trend.n, caso_n: st.caso.n, caso_vinti: st.caso.vinti, caso_rend_somma: (st.caso.attesa ?? 0) * st.caso.n, aggiornato_il: ora },
-      { ticker, tipo: "ribasso", vinti: st.ribasso.vinti, persi: st.ribasso.persi, scaduti: st.ribasso.scaduti, rend_somma: (st.ribasso.attesa ?? 0) * st.ribasso.n, caso_n: st.caso.n, caso_vinti: st.caso.vinti, caso_rend_somma: (st.caso.attesa ?? 0) * st.caso.n, aggiornato_il: ora },
-    ], { onConflict: "ticker,tipo" });
-    const { data: aperti } = await sb.from("segnali").select("id, data_segnale").eq("ticker", ticker).is("esito", null);
-    for (const sg of aperti || []) {
-      const r = valutaSegnale(barre, sg.data_segnale);
-      if (r) await sb.from("segnali").update({ esito: r.esito, data_esito: r.data_esito, giorni: r.giorni, rendimento: r.rendimento }).eq("id", sg.id);
-    }
-    if (a.stato === "forte" || a.stato === "ipervenduto") {
-      const tipo = a.stato === "forte" ? "trend" : "ribasso";
-      const stat = tipo === "trend" ? st.trend : st.ribasso;
-      await sb.from("segnali").upsert(
-        { ticker, tipo, data_segnale: a.ultima, prezzo: a.prezzo, p_prevista: stat.n >= 10 ? stat.pct : null, n_storico: stat.n },
-        { onConflict: "ticker,tipo,data_segnale", ignoreDuplicates: true },
-      );
-    }
-  } catch (_e) { /* il registro non deve mai far fallire l'analisi */ }
-}
 
 Deno.serve(async (req: Request) => {
   const cors = opzioniCors(req);
@@ -108,7 +84,7 @@ Deno.serve(async (req: Request) => {
     if (!ticker.includes(".")) { try { fxBarre = (await datiTitolo("EURUSD", esauriti)).barre; cambio = effettoCambio(fxBarre); } catch (_e) { cambio = null; fxBarre = null; } }
     const analisi = analizzaSerie(barre, opz, { mercato: ticker === "SPY" ? statoMercato(barre, "SPY") : mercato });
     if (!analisi) throw new ErroreServizio(404, "DATI_INSUFFICIENTI", "Storico insufficiente per " + ticker);
-    await registra(ticker, barre, analisi); // registro segnali e statistiche: non blocca mai l'analisi
+    await aggiornaRegistro(sb, ticker, barre, !!(analisi.qualita && analisi.qualita.gravi)); // registro segnali e statistiche: non blocca mai l'analisi
     // Studio per orizzonte (breve/medio/lungo): un eventuale errore non blocca mai l'analisi
     let orizzonti = null;
     try {
@@ -118,7 +94,9 @@ Deno.serve(async (req: Request) => {
       const { data: decl } = await sb.from("modelli_declassati").select("modello, orizzonte");
       if (orizzonti && decl && decl.length) orizzonti = applicaDeclassamenti(orizzonti, decl);
     } catch (_e) { orizzonti = null; }
-    return risposta({ ok: true, ticker, ...analisi, orizzonti, dati_del: aggiornato, usi_rimasti: rimasti, riuso: !consumato, usi_risparmiati: cons.risparmiati ?? 0, regime_debole: regime, contesto: { volatilita: vol, liquidita: liq, cambio }, versione_modello: orizzonti ? orizzonti.breve.versione : null });
+    let probabilita = null;
+    try { probabilita = previsioniTitolo(barre, { ticker, sim: 1000 }); } catch (_e) { probabilita = null; }
+    return risposta({ ok: true, ticker, ...analisi, orizzonti, probabilita, dati_del: aggiornato, usi_rimasti: rimasti, riuso: !consumato, usi_risparmiati: cons.risparmiati ?? 0, regime_debole: regime, contesto: { volatilita: vol, liquidita: liq, cambio }, versione_modello: orizzonti ? orizzonti.breve.versione : null });
   } catch (e) {
     let usi = chiave.usi_rimasti;
     if (consumato) {

@@ -35,6 +35,16 @@
 
 <h2>Il pallino colorato</h2>
 <p>Accanto a ogni titolo c'è un pallino: <b>verde</b> = scelta più prudente (statistiche affidabili e stabili, anche se il guadagno tipico può essere più basso); <b>giallo</b> = più rischioso (statistiche poco solide, segnale fragile, mercato debole o nessun vantaggio chiaro); <b>rosso</b> = meglio aspettare (in passato è andato peggio del solito); <b>grigio</b> = dati insufficienti. Il confronto sul guadagno è fatto con gli altri titoli della tua lista. È un'opinione statistica sul passato, non un consiglio né una previsione.</p>
+<h2>Previsioni a orizzonte fisso (nuovo metodo)</h2>
+<ul>
+<li><b>Ogni notte, per tutti i titoli.</b> Il programma registra la probabilità che il titolo salga (e che salga o scenda di almeno 5% o 10%) a 1, 3 e 12 mesi. La previsione non viene mai modificata: quando il periodo è trascorso si confronta con il risultato reale.</li>
+<li><b>Ingresso realistico.</b> Il segnale nasce alla chiusura del giorno; l'ingresso simulato è all'apertura del giorno dopo (se l'apertura non è disponibile, alla chiusura del giorno dopo), mai al prezzo di chiusura già conosciuto.</li>
+<li><b>Tre modelli separati.</b> «Base» (tutta la storia del titolo), «simili» (i giorni passati con la stessa situazione tecnica di oggi, ridotta verso la base se i casi sono pochi) e «bootstrap» (rendimenti recenti ricampionati a blocchi: stima soprattutto quanto può oscillare il prezzo). Non vengono mescolati: il registro dice quale funziona meglio.</li>
+<li><b>Come si misura.</b> Con il punteggio di Brier e il BSS (positivo = meglio di un semplice riferimento) e contando le <i>date diverse</i>: titoli analizzati lo stesso giorno non sono prove indipendenti.</li>
+<li><b>Validazione sull'intero universo.</b> Una verifica separata applica le regole a tutta la storia disponibile, confronta ogni titolo con la media dei titoli nella stessa data, usa un bootstrap a blocchi di date, corregge per i test multipli (Holm) e controlla la stabilità nel periodo più recente. Se non c'è un vantaggio dimostrabile, lo dice.</li>
+<li><b>Limiti.</b> La direzione futura dei prezzi è molto difficile da prevedere; i titoli già usciti dal mercato non sono nei dati (risultati tendenzialmente ottimistici); le percentuali sono frequenze storiche e simulazioni, non promesse.</li>
+</ul>
+
 <h2>Controlli aggiuntivi sul verdetto</h2>
 <ul>
 <li><b>Controllo dei falsi positivi.</b> Analizzando molti titoli, qualcuno sembra bravo solo per fortuna. Per questo «favorevole» richiede che il vantaggio regga anche con un margine di sicurezza del 99%, non solo del 95%. Se non regge, il verdetto resta «neutro» e la spiegazione lo dice.</li>

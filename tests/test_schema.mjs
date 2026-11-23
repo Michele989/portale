@@ -275,7 +275,50 @@ assert.equal((await db.query(`select count(*)::int n from access_keys where user
   await db.query(`insert into admins(user_id) values ($1)`, [adm]);
   await come(adm, async () => { await falla(db.query(`select elimina_mio_account()`), "admin protetto"); });
   // RLS su TUTTE le tabelle
-  assert.deepEqual((await db.query(`select tabelle_senza_rls() t`)).rows.map((x) => x.t).filter(Boolean), [], "tutte le tabelle hanno la RLS");
+  // ---- previsioni a orizzonte fisso (sezione 14) ----
+{
+  const ins = (t, d, o, m, p) => db.query(`insert into previsioni(ticker,data_prev,orizzonte,modello,versione,prob_su) values ($1,$2,$3,$4,'p1.0',$5) returning id`, [t, d, o, m, p]);
+  const esito = (id, rend) => db.query(`insert into previsioni_esiti(previsione_id,data_ingresso,prezzo_ingresso,su_apertura,data_esito,rendimento,su) values ($1,'2026-01-03',100,true,'2026-02-03',$2,$3)`, [id, rend, rend > 0]);
+  // 40 giorni distinti: base 0.5, simili 0.9 (sbaglia quando esce giu'), esiti 50% su
+  for (let i = 0; i < 40; i++) {
+    const d = "2026-01-" + String(1 + (i % 28)).padStart(2, "0"); const tk = "T" + Math.floor(i / 28);
+    const b = (await ins(tk, d, 21, "base", 0.5)).rows[0].id; const s = (await ins(tk, d, 21, "simili", 0.9)).rows[0].id;
+    await esito(b, i % 2 ? 3 : -3); await esito(s, i % 2 ? 3 : -3);
+  }
+  await ins("T0", "2026-03-01", 21, "base", 0.5); // aperta
+  await falla(ins("T0", "2026-03-01", 21, "base", 0.5), "una sola previsione per titolo/data/orizzonte/modello/versione");
+  await falla(ins("T0", "2026-03-02", 30, "base", 0.5), "orizzonte non ammesso");
+  await falla(ins("T0", "2026-03-02", 21, "base", 1.5), "probabilita' oltre 1");
+  const ap = (await db.query(`select * from previsioni_aperte('t0')`)).rows;
+  assert.equal(ap.length, 1); assert.equal(new Date(ap[0].data_prev).getMonth(), 2); assert.equal(new Date(ap[0].data_prev).getDate(), 1);
+  const v = (await db.query(`select valutazione_previsioni() v`)).rows[0].v;
+  assert.equal(v.maturate, 80); assert.equal(v.emesse, 81);
+  const base = v.modelli.find((m) => m.modello === "base"), sim = v.modelli.find((m) => m.modello === "simili");
+  assert.equal(base.n, 40); assert.equal(Number(base.brier), 0.25); assert.equal(Number(base.bss), 0);
+  assert.ok(Number(sim.brier) > Number(base.brier) && Number(sim.bss) < 0, "il modello troppo sicuro e sbagliato ha BSS negativo");
+  assert.ok(base.giorni <= 28);
+  // le previsioni e gli esiti sono solo del server
+  await come(a, async () => {
+    for (const t of ["previsioni", "previsioni_esiti", "validazioni"]) assert.equal((await db.query(`select count(*)::int n from ${t}`)).rows[0].n, 0, t + " non leggibile dai clienti");
+    await falla(db.query(`insert into previsioni(ticker,data_prev,orizzonte,modello,versione,prob_su) values ('X','2026-01-01',21,'base','p1.0',0.5)`), "cliente non scrive");
+    await falla(db.query(`select * from previsioni_aperte('T0')`), "previsioni_aperte solo server");
+    assert.equal((await db.query(`select valutazione_previsioni() v`)).rows[0].v.maturate, 80, "la valutazione aggregata e' visibile");
+  });
+  await db.exec(`set role anon`); await falla(db.query(`select valutazione_previsioni()`), "anon vietato"); await db.exec(`reset role`);
+}
+// ---- le query dello strumento di validazione funzionano sullo schema ----
+{
+  const barre = (n) => JSON.stringify({ b: Array.from({ length: n }, (_, i) => ["2020-01-01", 1, 1, 1, 1]), v: 2 });
+  await db.query(`insert into price_cache(ticker, dati) values ('VAL1', $1::jsonb), ('VAL2', $2::jsonb), ('EURUSD', $1::jsonb), ('ERR', '{"b":[],"err":1}'::jsonb)`, [barre(700), barre(100)]);
+  const el = (await db.query(`select ticker from price_cache where not (dati ? 'err') and jsonb_array_length(dati->'b') >= 600 and ticker <> 'EURUSD' order by ticker`)).rows.map((x) => x.ticker);
+  assert.deepEqual(el, ["VAL1"]);
+  await db.query(`insert into validazioni(versione, esito) values ('v1.0', '{"conclusione":"x"}'::jsonb)`);
+  await db.query(`delete from validazioni where id not in (select id from validazioni order by eseguita_il desc limit 24)`);
+  assert.equal((await db.query(`select count(*)::int n from validazioni`)).rows[0].n, 1);
+  const v = (await db.query(`select valutazione_previsioni() v`)).rows[0].v;
+  assert.equal(v.ultima_validazione.conclusione, "x");
+}
+assert.deepEqual((await db.query(`select tabelle_senza_rls() t`)).rows.map((x) => x.t).filter(Boolean), [], "tutte le tabelle hanno la RLS");
 }
 // ---- Migliorie gratuite: rendimento medio e riferimento "giorno qualsiasi"; storico verdetti ----
 {

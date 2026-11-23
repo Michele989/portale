@@ -179,6 +179,11 @@
       <div id="boxTrack" class="muted">Caricamento…</div>
     </section>
     <section>
+      <h2>Previsioni misurate (nuovo metodo)</h2>
+      <p class="muted">Ogni notte il programma registra, per tutti i titoli, la probabilità che salgano a 1, 3 e 12 mesi (ingresso all'apertura del giorno dopo). Quando il periodo è trascorso si confronta con quello che è successo. <b>BSS</b> positivo = meglio di un semplice riferimento; negativo o vicino a zero = nessun vantaggio.</p>
+      <div id="boxPrev" class="muted">Caricamento…</div>
+    </section>
+    <section>
       <h2>Calibrazione</h2>
       <p class="muted">Se il servizio dichiara «60% storico», i segnali reali dovrebbero riuscire circa 6 volte su 10. Qui si confronta il dichiarato con l'osservato.</p>
       <div id="boxCalib" class="muted"></div>
@@ -1388,6 +1393,31 @@
     $("pannello").classList.remove("hidden"); document.body.classList.add("senza-scroll");
     $("chiudiPannello").focus();
   }
+
+  // ------------------------------------------------------------ PROBABILITA' STIMATE (metodo a orizzonte fisso)
+  var NOME_MOD = { base: "tutta la storia del titolo", simili: "giorni passati con la stessa situazione tecnica di oggi", bootstrap: "simulazione sui rendimenti recenti" };
+  function pc(x) { return x === null || x === undefined ? "n/d" : fmt(x * 100, 0) + "%"; }
+  function probStimate(a) {
+    var p = a && a.probabilita; if (!p || !p.length) return "";
+    var NO = { 21: "1 mese", 63: "3 mesi", 252: "1 anno" }, per = {};
+    p.forEach(function (x) { (per[x.orizzonte] = per[x.orizzonte] || {})[x.modello] = x; });
+    var ore = [21, 63, 252].filter(function (h) { return per[h]; });
+    var righe = ore.map(function (h) {
+      var m = per[h].simili || per[h].base;
+      return "<tr><td>" + NO[h] + "</td><td><b>" + pc(m.probSu) + "</b></td><td>" + pc(m.probGuad5) + "</td><td>" + pc(m.probPerd5) + "</td><td>" + pc(m.probPerd10) + "</td><td>" + sg(m.p05, 0) + "% … " + sg(m.p95, 0) + "%</td></tr>";
+    }).join("");
+    var tutti = ore.map(function (h) {
+      return ["base", "simili", "bootstrap"].filter(function (k) { return per[h][k]; }).map(function (k) {
+        var m = per[h][k];
+        return "<tr><td>" + NO[h] + "</td><td>" + esc(k) + "</td><td>" + pc(m.probSu) + "</td><td>" + sg(m.mediana, 1) + "%</td><td>" + sg(m.p05, 0) + "% … " + sg(m.p95, 0) + "%</td><td>" + m.nEff + "</td></tr>";
+      }).join("");
+    }).join("");
+    return "<h3>Probabilità stimate</h3>" +
+      '<div class="scroll"><table><thead><tr><th>Tra</th><th>Sale</th><th>Sale di almeno 5%</th><th>Scende di almeno 5%</th><th>Scende di almeno 10%</th><th>Nel 90% dei casi tra</th></tr></thead><tbody>' + righe + "</tbody></table></div>" +
+      '<div class="muted">Sono frequenze calcolate sul passato (e simulazioni), <b>non previsioni</b>: la direzione futura resta molto incerta. Ingresso simulato all\'apertura del giorno dopo. Il tab Affidabilità misura se queste percentuali si sono rivelate giuste.</div>' +
+      '<details class="esperti"><summary>Confronto dei tre modelli</summary><div class="scroll"><table><thead><tr><th>Tra</th><th>Modello</th><th>Sale</th><th>Mediana</th><th>90% dei casi</th><th>Finestre indip.</th></tr></thead><tbody>' + tutti + "</tbody></table></div>" +
+      '<div class="muted">base = ' + NOME_MOD.base + "; simili = " + NOME_MOD.simili + " (ridotto verso la base se i casi sono pochi); bootstrap = " + NOME_MOD.bootstrap + " (stima soprattutto quanto può oscillare).</div></details>";
+  }
   function renderPannello() {
     var t = S.apri, a = S.ris[t], o = oz(a); if (!a || !o) { chiudiPannello(); return; }
     var u = statUsata(o), pref = !!S.pref[t], datiVecchi = S.rif && a.ultima && a.ultima < S.rif;
@@ -1402,6 +1432,7 @@
       (o.orizzontiInContrasto ? '<div class="nota">Attenzione: gli orizzonti sono in contrasto (uno favorevole e uno sfavorevole). Prima di decidere guarda tutti e tre.</div>' : "") +
       "<h3>Riassunto</h3>" + riassunto(a, o, u) +
       (function () { var x = fraseSpy(o), y = fraseCambio(a, o), z = fraseIncertezza(o, u); return (z ? '<div class="muted">' + z + "</div>" : "") + (x ? '<div class="muted">' + x + "</div>" : "") + (y ? '<div class="muted">' + y + "</div>" : ""); })() +
+      probStimate(a) +
       '<div id="storicoV" class="muted" style="margin:6px 0"></div>' +
       "<h3>Perché</h3>" + perche(a, o, u) +
       '<details class="esperti"><summary><b>Per esperti</b> (indicatori, probabilità, simulazioni, grafico)</summary>' + esperti(a, o, u) + "</details>";
@@ -1528,11 +1559,45 @@
   };
 
   // ------------------------------------------------------------ AFFIDABILITA'
+
+  function renderPrevisioni(v, e) {
+    var box = $("boxPrev");
+    if (!v) { box.textContent = "Dati non disponibili al momento."; return; }
+    var NO = { 21: "1 mese", 63: "3 mesi", 252: "1 anno" }, h = "";
+    if (!v.emesse) h += "Il nuovo registro parte dalla prossima notte: appena saranno trascorsi 21 giorni compariranno qui i primi risultati.";
+    else {
+      h += "Previsioni registrate: <b>" + v.emesse + "</b> (dal " + MA.data(v.dal) + ") · già verificate: <b>" + v.maturate + "</b>.";
+      var m = v.modelli || [];
+      if (!m.length) h += '<div class="nota">Nessuna previsione è ancora arrivata a scadenza (servono almeno 21 giorni di borsa).</div>';
+      else {
+        h += '<div class="scroll"><table><thead><tr><th>Orizzonte</th><th>Modello</th><th>Casi</th><th>Date diverse</th><th>Dichiarato</th><th>Osservato</th><th>BSS</th></tr></thead><tbody>' +
+          m.map(function (r) {
+            var buono = r.bss !== null && r.bss !== undefined && r.bss > 0.01;
+            return "<tr><td>" + (NO[r.orizzonte] || r.orizzonte) + "</td><td>" + esc(r.modello) + "</td><td>" + r.n + "</td><td>" + r.giorni + "</td><td>" + fmt(r.prob_media, 0) + "%</td><td>" + fmt(r.osservato, 0) + "%</td><td>" + (r.bss === null || r.bss === undefined ? "n/d" : (buono ? "<b>" + sg(r.bss, 3) + "</b>" : sg(r.bss, 3))) + "</td></tr>";
+          }).join("") + "</tbody></table></div>";
+        var pochi = m.some(function (r) { return r.giorni < 30; });
+        h += '<div class="muted" style="margin-top:8px">' + (pochi ? "Poche date diverse: titoli analizzati lo stesso giorno non sono prove indipendenti, quindi per ora i numeri sono instabili. " : "") + "«Date diverse» conta davvero quante occasioni indipendenti ci sono state.</div>";
+      }
+    }
+    if (e && e.conclusione) {
+      h += '<div class="vista" style="margin-top:10px"><div><b>Validazione sull\'intero universo (dati storici)</b><br>' + esc(e.conclusione) +
+        '<div class="muted">Eseguita il ' + MA.data(String(e.generato || "").slice(0, 10)) + " su " + (e.universo ? e.universo.titoli : "?") + " titoli (survivorship bias: titoli attuali). Si rifà da GitHub → Actions → Validazione.</div></div></div>";
+      if (e.regole && e.regole.length) {
+        h += '<div class="scroll"><table><thead><tr><th>Regola</th><th>Orizzonte</th><th>Eccesso medio</th><th>Intervallo 95%</th><th>p corretto</th><th>Periodo recente</th></tr></thead><tbody>' +
+          e.regole.map(function (r) {
+            return "<tr><td>" + (r.regola === "forte" ? "Trend rialzista" : "Dopo ribasso") + "</td><td>" + (NO[r.orizzonte] || r.orizzonte) + "</td><td>" + (r.media === null ? "n/d" : sg(r.media, 2) + " pt") + "</td><td>" + (r.ci95 ? fmt(r.ci95[0], 2) + " … " + fmt(r.ci95[1], 2) : "n/d") + "</td><td>" + (r.pHolm === null || r.pHolm === undefined ? "n/d" : fmt(r.pHolm, 3)) + "</td><td>" + (r.recente && r.recente.media !== null ? sg(r.recente.media, 2) + " pt" : "n/d") + "</td></tr>";
+          }).join("") + "</tbody></table></div>" +
+          '<div class="muted" style="margin-top:8px"><b>Eccesso</b> = quanto in più (punti %) rende un titolo in quello stato rispetto alla media di tutti i titoli nella stessa data. Se l\'intervallo include lo zero, non c\'è vantaggio dimostrato.</div>';
+      }
+    } else h += '<div class="muted" style="margin-top:8px">La validazione sull\'intero universo non è ancora stata eseguita: GitHub → Actions → Validazione → Run workflow.</div>';
+    box.innerHTML = h;
+  }
   async function caricaAffidabilita() {
-    $("boxTrack").textContent = "Caricamento…";
+    $("boxTrack").textContent = "Caricamento…"; $("boxPrev").textContent = "Caricamento…";
     var rg = await MA.sb.rpc("registro_pubblico");
     $("boxRegistro").className = rg && rg.data ? "" : "muted";
     $("boxRegistro").innerHTML = rg && rg.data ? MA_REGISTRO.html(rg.data) : "Dati non disponibili al momento.";
+    try { var vp = await MA.sb.rpc("valutazione_previsioni"); renderPrevisioni(vp && vp.data, vp && vp.data && vp.data.ultima_validazione); } catch (_e) { $("boxPrev").textContent = "Dati non disponibili al momento."; }
     var t = await MA.sb.rpc("track_record"), ag = await MA.sb.rpc("statistiche_aggregate");
     var d = t && t.data;
     if (!d) { $("boxTrack").textContent = "Dati non disponibili al momento."; $("boxCalib").textContent = ""; }
