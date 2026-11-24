@@ -17,6 +17,7 @@ jobs:
       - name: Esegui il test dei bilanci
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
         run: node --experimental-strip-types --no-warnings strumenti/fondamentali.mjs
       - name: Salva il risultato completo
         uses: actions/upload-artifact@v4
