@@ -3,6 +3,7 @@
 import pg from "pg";
 import { writeFileSync } from "node:fs";
 import { espandi } from "../supabase/functions/_shared/analisi.ts";
+import { ricalibrazione } from "../supabase/functions/_shared/calibrazione.ts";
 import { validazioneCompleta, VERSIONE_VALIDAZIONE } from "../supabase/functions/_shared/validazione.ts";
 
 const url = process.env.DATABASE_URL;
@@ -22,6 +23,15 @@ const aperture = serie.reduce((a, s) => a + s.cron.filter((b) => b.o).length, 0)
 console.log("Barre totali:", tot, "| con apertura:", Math.round(100 * aperture / tot) + "%");
 const inizio = Date.now();
 const esito = validazioneCompleta(serie, spy, { B: 2000, seed: VERSIONE_VALIDAZIONE });
+// ricalibrazione automatica: solo con esiti reali maturati (le previsioni nuove ne producono col tempo)
+esito.ricalibrazione = {};
+try {
+  const { rows: pe } = await client.query(`select p.modello, p.orizzonte, p.data_prev::text as data, p.prob_su::float as p, case when e.su then 1 else 0 end as y from previsioni p join previsioni_esiti e on e.previsione_id = p.id`);
+  for (const m of ["base", "simili", "bootstrap", "garch"]) for (const h of [21, 63, 252]) {
+    const punti = pe.filter((x) => x.modello === m && x.orizzonte === h).map((x) => ({ p: x.p, y: x.y, data: x.data }));
+    if (punti.length) esito.ricalibrazione[m + "_" + h] = ricalibrazione(punti);
+  }
+} catch (e) { esito.ricalibrazione = { errore: String(e.message || e) }; }
 esito.durata_s = Math.round((Date.now() - inizio) / 1000);
 esito.quota_barre_con_apertura = Math.round(100 * aperture / tot);
 writeFileSync("validazione.json", JSON.stringify(esito, null, 2));
@@ -38,5 +48,10 @@ for (const r of esito.regole) {
 }
 console.log("\nPROBABILITA' (BSS > 0 = i 'simili' battono la base; intervallo al 95%):");
 for (const p of esito.probabilita) console.log(`  ${p.orizzonte}g  intero BSS ${f(p.intero.bss, 4)} [${f(p.intero.ci95 && p.intero.ci95[0], 4)} ; ${f(p.intero.ci95 && p.intero.ci95[1], 4)}]  recente ${f(p.recente.bss, 4)}  oss=${p.intero.osservazioni}`);
+if (esito.realityCheck) console.log(`\nREALITY CHECK (il migliore tra ${esito.realityCheck.test} test): migliore = ${esito.realityCheck.migliore}, p = ${f(esito.realityCheck.pValore, 3)}`);
+for (const d of esito.distribuzioni || []) console.log(`DISTRIBUZIONE ${d.orizzonte}g: CRPS storica ${f(d.crps_empirica, 3)} vs normale ${f(d.crps_normale, 3)} (skill ${f(d.skill_vs_normale, 3)}), PIT ${d.pit_decimi.map((x) => Math.round(x * 100)).join("/")}%`);
+for (const c of esito.calibrazione_lineare || []) console.log(`CALIBRAZIONE ${c.orizzonte}g: simili pendenza ${f(c.simili && c.simili.pendenza, 2)} intercetta ${f(c.simili && c.simili.intercetta, 2)} | base pendenza ${f(c.base && c.base.pendenza, 2)} (1 = perfetta)`);
+if (esito.qualita_dati) console.log(`QUALITA' DATI: ${esito.qualita_dati.con_anomalie} titoli su ${esito.qualita_dati.titoli} con anomalie`);
+for (const [k, v] of Object.entries(esito.ricalibrazione || {})) console.log(`RICALIBRAZIONE ${k}: ${v.attiva ? "ATTIVA" : "non attiva"} - ${v.nota || ""}`);
 console.log("\nCONCLUSIONE:", esito.conclusione);
 console.log("\nNote:"); for (const n of esito.note) console.log(" -", n);

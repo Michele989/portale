@@ -879,7 +879,7 @@
     medio: { nome: "Medio", sub: "circa 3 mesi", desc: "Per chi ragiona in alcuni mesi. Pesa il trend (media a 50 e 200 giorni, ultimi 3 mesi, ADX). È l'orizzonte con più dati utili nello storico." },
     lungo: { nome: "Lungo", sub: "circa 1 anno", desc: "Per chi ragiona in anni. Pesa il trend di fondo (media a 200 giorni, ultimo anno, distanza dal massimo). Lo storico contiene pochi periodi indipendenti: lo studio è utile ma poco affidabile." }
   };
-  var VERD = { favorevole: "Segnale tecnico favorevole", neutro: "Neutro", sfavorevole: "Sfavorevole: da evitare secondo le regole", non_valutabile: "Dati insufficienti" };
+  var VERD = { favorevole: "Segnale tecnico favorevole (non dimostrato)", neutro: "Neutro", sfavorevole: "Sfavorevole secondo le regole", non_valutabile: "Dati insufficienti" };
   var VCLS = { favorevole: "fav", neutro: "neutro", sfavorevole: "sfav", non_valutabile: "nv" };
   var NOMI = {};
   (window.MA_CATALOGO || []).forEach(function (x) { NOMI[x[0]] = x[1]; });
@@ -1395,8 +1395,15 @@
   }
 
   // ------------------------------------------------------------ PROBABILITA' STIMATE (metodo a orizzonte fisso)
-  var NOME_MOD = { base: "tutta la storia del titolo", simili: "giorni passati con la stessa situazione tecnica di oggi", bootstrap: "simulazione sui rendimenti recenti" };
+  var NOME_MOD = { base: "tutta la storia del titolo", simili: "giorni passati con la stessa situazione tecnica di oggi", bootstrap: "simulazione sui rendimenti recenti", garch: "simulazione con volatilità che cambia nel tempo (GARCH)" };
   function pc(x) { return x === null || x === undefined ? "n/d" : fmt(x * 100, 0) + "%"; }
+  function boxEvidenza(a) {
+    var e = a && a.evidenza; if (!e) return "";
+    var cls = e.livello === "dimostrata" ? "ok" : e.livello === "sfavorevole" ? "err" : "muted";
+    var det = (e.regole || []).map(function (r) { return "<tr><td>" + esc(r.regola) + "</td><td>" + r.orizzonte + " g</td><td>" + (r.stato === "dimostrata" ? "dimostrata" : r.stato === "sfavorevole" ? "peggio della media" : "non dimostrata") + "</td></tr>"; }).join("");
+    return '<div class="nota"><b>Evidenza: <span class="' + cls + '">' + esc(e.titolo) + "</span></b><br>" + esc(e.testo) + (e.data ? ' <span class="muted">(verifica del ' + esc(e.data) + ")</span>" : "") +
+      (det ? '<details class="esperti"><summary>Dettaglio per regola</summary><div class="scroll"><table><thead><tr><th>Regola</th><th>Orizzonte</th><th>Esito</th></tr></thead><tbody>' + det + "</tbody></table></div></details>" : "") + "</div>";
+  }
   function probStimate(a) {
     var p = a && a.probabilita; if (!p || !p.length) return "";
     var NO = { 21: "1 mese", 63: "3 mesi", 252: "1 anno" }, per = {};
@@ -1404,10 +1411,10 @@
     var ore = [21, 63, 252].filter(function (h) { return per[h]; });
     var righe = ore.map(function (h) {
       var m = per[h].simili || per[h].base;
-      return "<tr><td>" + NO[h] + "</td><td><b>" + pc(m.probSu) + "</b></td><td>" + pc(m.probGuad5) + "</td><td>" + pc(m.probPerd5) + "</td><td>" + pc(m.probPerd10) + "</td><td>" + sg(m.p05, 0) + "% … " + sg(m.p95, 0) + "%</td></tr>";
+      return "<tr><td>" + NO[h] + "</td><td><b>" + pc(m.probCalibrata !== undefined ? m.probCalibrata : m.probSu) + "</b>" + (m.probCalibrata !== undefined ? ' <span class="muted">(corretta)</span>' : "") + "</td><td>" + pc(m.probGuad5) + "</td><td>" + pc(m.probPerd5) + "</td><td>" + pc(m.probPerd10) + "</td><td>" + sg(m.p05, 0) + "% … " + sg(m.p95, 0) + "%</td></tr>";
     }).join("");
     var tutti = ore.map(function (h) {
-      return ["base", "simili", "bootstrap"].filter(function (k) { return per[h][k]; }).map(function (k) {
+      return ["base", "simili", "bootstrap", "garch"].filter(function (k) { return per[h][k]; }).map(function (k) {
         var m = per[h][k];
         return "<tr><td>" + NO[h] + "</td><td>" + esc(k) + "</td><td>" + pc(m.probSu) + "</td><td>" + sg(m.mediana, 1) + "%</td><td>" + sg(m.p05, 0) + "% … " + sg(m.p95, 0) + "%</td><td>" + m.nEff + "</td></tr>";
       }).join("");
@@ -1415,8 +1422,8 @@
     return "<h3>Probabilità stimate</h3>" +
       '<div class="scroll"><table><thead><tr><th>Tra</th><th>Sale</th><th>Sale di almeno 5%</th><th>Scende di almeno 5%</th><th>Scende di almeno 10%</th><th>Nel 90% dei casi tra</th></tr></thead><tbody>' + righe + "</tbody></table></div>" +
       '<div class="muted">Sono frequenze calcolate sul passato (e simulazioni), <b>non previsioni</b>: la direzione futura resta molto incerta. Ingresso simulato all\'apertura del giorno dopo. Il tab Affidabilità misura se queste percentuali si sono rivelate giuste.</div>' +
-      '<details class="esperti"><summary>Confronto dei tre modelli</summary><div class="scroll"><table><thead><tr><th>Tra</th><th>Modello</th><th>Sale</th><th>Mediana</th><th>90% dei casi</th><th>Finestre indip.</th></tr></thead><tbody>' + tutti + "</tbody></table></div>" +
-      '<div class="muted">base = ' + NOME_MOD.base + "; simili = " + NOME_MOD.simili + " (ridotto verso la base se i casi sono pochi); bootstrap = " + NOME_MOD.bootstrap + " (stima soprattutto quanto può oscillare).</div></details>";
+      '<details class="esperti"><summary>Confronto dei modelli</summary><div class="scroll"><table><thead><tr><th>Tra</th><th>Modello</th><th>Sale</th><th>Mediana</th><th>90% dei casi</th><th>Finestre indip.</th></tr></thead><tbody>' + tutti + "</tbody></table></div>" +
+      '<div class="muted">base = ' + NOME_MOD.base + "; simili = " + NOME_MOD.simili + " (ridotto verso la base se i casi sono pochi); bootstrap = " + NOME_MOD.bootstrap + "; garch = " + NOME_MOD.garch + ". Gli ultimi due stimano soprattutto quanto può oscillare il prezzo, non la direzione.</div></details>";
   }
   function renderPannello() {
     var t = S.apri, a = S.ris[t], o = oz(a); if (!a || !o) { chiudiPannello(); return; }
@@ -1432,7 +1439,7 @@
       (o.orizzontiInContrasto ? '<div class="nota">Attenzione: gli orizzonti sono in contrasto (uno favorevole e uno sfavorevole). Prima di decidere guarda tutti e tre.</div>' : "") +
       "<h3>Riassunto</h3>" + riassunto(a, o, u) +
       (function () { var x = fraseSpy(o), y = fraseCambio(a, o), z = fraseIncertezza(o, u); return (z ? '<div class="muted">' + z + "</div>" : "") + (x ? '<div class="muted">' + x + "</div>" : "") + (y ? '<div class="muted">' + y + "</div>" : ""); })() +
-      probStimate(a) +
+      boxEvidenza(a) + probStimate(a) +
       '<div id="storicoV" class="muted" style="margin:6px 0"></div>' +
       "<h3>Perché</h3>" + perche(a, o, u) +
       '<details class="esperti"><summary><b>Per esperti</b> (indicatori, probabilità, simulazioni, grafico)</summary>' + esperti(a, o, u) + "</details>";

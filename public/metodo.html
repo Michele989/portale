@@ -139,5 +139,6 @@
 document.querySelectorAll("[data-cfg]").forEach(function (e) { e.textContent = (window.CONFIG || {})[e.getAttribute("data-cfg")] || ""; });
 document.querySelectorAll("[data-nome]").forEach(function (e) { e.textContent = (window.CONFIG || {}).NOME_SERVIZIO || ""; });
 </script>
+<h2>Evidenza e controlli avanzati</h2><p>Ogni analisi mostra un riquadro <b>Evidenza</b>: dice se, sull'intero universo, le regole tecniche battono dimostrabilmente la media dei titoli (dopo correzione per test multipli di Holm, White Reality Check e controllo sul periodo recente). Se non è dimostrato, il segnale tecnico è solo un'osservazione. La validazione misura anche: obiettivi/stop in multipli di ATR, CRPS e PIT delle distribuzioni, pendenza e intercetta di calibrazione, qualità dei dati. Le probabilità vengono corrette automaticamente solo se la correzione migliora il Brier su dati più recenti.</p>
 </body>
 </html>
