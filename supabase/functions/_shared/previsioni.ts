@@ -14,11 +14,13 @@
 // =========================================================================
 import { rsiAt, smaAt } from "./analisi.ts";
 import type { Barra } from "./analisi.ts";
+import { rendimentiGiornalieri, simulaGarch, stimaGarch } from "./garch.ts";
 
 export const ORIZZONTI_PREV = [21, 63, 252] as const;
 export type OrizzontePrev = 21 | 63 | 252;
-export type ModelloPrev = "base" | "simili" | "bootstrap";
+export type ModelloPrev = "base" | "simili" | "bootstrap" | "garch";
 export const VERSIONE_PREV = "p1.0";
+export const FINESTRA_GARCH = 1500;
 export type StatoGiorno = "ipervenduto" | "forte" | "neutro" | "debole" | "nd";
 
 export interface PrevisioneTitolo {
@@ -209,6 +211,7 @@ export function previsioniTitolo(recentiPrima: Barra[], opz: { sim?: number; tic
   const out: PrevisioneTitolo[] = [];
   const dataPrev = cron[n - 1].d;
   const ticker = opz.ticker || "";
+  const gp = stimaGarch(rendimentiGiornalieri(cron.map((x) => x.c).slice(-FINESTRA_GARCH - 1)));
   for (const h of ORIZZONTI_PREV) {
     const r = rendFuturi(cron, h);
     const noti: number[] = [], notiStato: StatoGiorno[] = [];
@@ -229,6 +232,11 @@ export function previsioniTitolo(recentiPrima: Barra[], opz: { sim?: number; tic
     // bootstrap a blocchi sui rendimenti recenti
     const fin = bootstrapBlocchi(cron.map((x) => x.c), h, ticker + dataPrev + h, opz.sim ?? 2000);
     if (fin.length) out.push(riassunto(fin, h, "bootstrap", stato, fin.filter((x) => x > 0).length / fin.length, nEffBase));
+    // GARCH(1,1) con innovazioni t: volatilita' che cambia nel tempo (drift = media storica)
+    if (gp) {
+      const sg = simulaGarch(gp, h, opz.sim ?? 2000, mulberry32(seme(ticker + dataPrev + "g" + h)));
+      out.push(riassunto(sg, h, "garch", stato, sg.filter((x) => x > 0).length / sg.length, nEffBase));
+    }
   }
   return out;
 }

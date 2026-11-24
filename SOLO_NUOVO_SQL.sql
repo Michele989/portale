@@ -1,5 +1,3 @@
--- Incolla TUTTO questo nel SQL Editor di Supabase e premi Run (si può rifare senza problemi).
-
 -- 14) PREVISIONI a orizzonte fisso (21/63/252 sedute): scritte ogni notte per tutti i titoli, MAI modificate.
 --     Il risultato reale va in una tabella separata. Tre modelli confrontati (base, simili, bootstrap).
 create table if not exists public.previsioni (
@@ -7,7 +5,7 @@ create table if not exists public.previsioni (
   ticker text not null check (ticker ~ '^[A-Z0-9.-]{1,12}$'),
   data_prev date not null,                          -- chiusura su cui si basa la previsione
   orizzonte integer not null check (orizzonte in (21, 63, 252)),
-  modello text not null check (modello in ('base', 'simili', 'bootstrap')),
+  modello text not null,
   versione text not null,
   prob_su numeric not null check (prob_su >= 0 and prob_su <= 1),
   mediana numeric, p05 numeric, p95 numeric,        -- rendimento in %
@@ -17,6 +15,8 @@ create table if not exists public.previsioni (
   creato_il timestamptz not null default now(),
   unique (ticker, data_prev, orizzonte, modello, versione)
 );
+alter table public.previsioni drop constraint if exists previsioni_modello_check;
+alter table public.previsioni add constraint previsioni_modello_check check (modello in ('base', 'simili', 'bootstrap', 'garch'));
 create index if not exists previsioni_ticker_idx on public.previsioni (ticker, data_prev desc);
 
 create table if not exists public.previsioni_esiti (

@@ -277,7 +277,7 @@ assert.match(testo(d, "boxStato"), /Ti restano 7 usi su 20/, "contatore aggiorna
     { orizzonte: 21, modello: "bootstrap", probSu: 0.57, mediana: 1.2, p05: -9, p95: 10, probPerd5: 0.2, probGuad5: 0.27, probPerd10: 0.07, probGuad10: 0.1, nEff: 60, stato: "forte" }];
   click(d, DOC.querySelector('#boxClassifica [data-vai="VOO"]'));
   assert.match(testo(d, "pannelloCorpo"), /Probabilità stimate[\s\S]*1 mese[\s\S]*61%[\s\S]*non previsioni/, "probabilita' stimate: usa 'simili' e avvisa che non sono previsioni");
-  assert.match(testo(d, "pannelloCorpo"), /Confronto dei tre modelli[\s\S]*bootstrap/);
+  assert.match(testo(d, "pannelloCorpo"), /Confronto dei modelli[\s\S]*bootstrap/);
   click(d, $(d, "chiudiPannello")); delete S2.ris.VOO.probabilita;
   // cosa e' cambiato: un verdetto diverso dall'analisi precedente viene segnalato
   await attendi(40);

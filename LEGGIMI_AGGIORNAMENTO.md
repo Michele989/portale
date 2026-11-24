@@ -1,8 +1,9 @@
-# Aggiornamento: previsioni e validazione (4 passi)
+# Aggiornamento v4 (3 passi)
 
-1. **Database** — Supabase → SQL Editor → New query → incolla tutto il file `SOLO_NUOVO_SQL.sql` → Run. Deve dire "Success".
-2. **Funzioni** — doppio clic su `AGGIORNA_FUNZIONI.bat` (due deploy; se chiede "Deploy?" rispondi Yes). Deve finire con FATTO.
-3. **GitHub** — carica tutto il contenuto della cartella (cartelle `public`, `supabase`, `strumenti`, `tests` e i file). Per il file `.github/workflows/validazione.yml`: GitHub → Add file → Create new file → nome `.github/workflows/validazione.yml` → incolla il contenuto → Commit.
-4. **Validazione** — GitHub → Actions → **Validazione** → Run workflow. Dopo 5-15 minuti apri la riga verde → job `valida` → passo "Esegui la validazione": in fondo c'è la CONCLUSIONE. Il risultato compare anche nel tab Affidabilità del sito.
+1. **Supabase → SQL Editor**: incolla tutto `SOLO_NUOVO_SQL.sql` → Run.
+2. **Doppio clic su `AGGIORNA_FUNZIONI.bat`** (aggiorna analizza + precarica).
+3. **GitHub**: carica la cartella `public`, `strumenti`, `.github` (sostituisci i file) → Commit.
+   Poi Actions → **Validazione** → Run workflow.
 
-Da stanotte il programma scrive le previsioni di tutti i titoli. I primi risultati veri arrivano dopo 21 giorni di borsa (circa metà dicembre).
+Novità: modello GARCH, test con soglie ATR, Reality Check, PIT/CRPS, calibrazione, qualità dati,
+ricalibrazione automatica e riquadro **Evidenza** al posto del giudizio "favorevole".

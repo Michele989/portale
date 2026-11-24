@@ -53,3 +53,24 @@ const t1 = validazioneCompleta(base.map((s) => ({ ticker: s.ticker, cron: s.cron
 const t2 = validazioneCompleta(mod.map((s) => ({ ticker: s.ticker, cron: s.cron.slice(0, 500) })), null, { B: 100, seed: "x", orizzonti: [21] });
 assert.deepEqual(t1.probabilita[0].intero, t2.probabilita[0].intero);
 console.log("test_validazione OK");
+
+// ---- volatilita': GARCH utile quando la volatilita' cambia davvero nel tempo, non quando e' costante ----
+function universoGarch(nTit, nGiorni, seed) {
+  const rnd = mulberry32(seed); const g = () => { const u = Math.max(rnd(), 1e-12), v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  const d0 = Date.UTC(2010, 0, 4); const serie = [];
+  for (let k = 0; k < nTit; k++) {
+    let p = 100, s2 = 1.2e-4; const cron = [];
+    for (let i = 0; i < nGiorni; i++) {
+      const e = Math.sqrt(s2) * g(); const o = p; p *= 1 + 0.0003 + e; s2 = 4e-6 + 0.12 * e * e + 0.85 * s2;
+      cron.push({ d: new Date(d0 + i * 864e5).toISOString().slice(0, 10), o, h: Math.max(o, p) * 1.002, l: Math.min(o, p) * 0.998, c: p, v: 1e6 });
+    }
+    serie.push({ ticker: "G" + k, cron });
+  }
+  return serie;
+}
+const eg = validazioneCompleta(universoGarch(12, 2600, 3), null, { B: 200, seed: "g", orizzonti: [21] });
+assert.ok(eg.volatilita.previsioni > 100, "previsioni di volatilita': " + eg.volatilita.previsioni);
+assert.equal(eg.volatilita.utile, true, "GARCH battuto non deve succedere se la volatilita' cambia: " + JSON.stringify(eg.volatilita.vantaggio_vs_ultimi63));
+assert.match(eg.conclusioneRischio, /migliore dei confronti semplici/);
+assert.equal(e0.volatilita.utile, false, "con volatilita' costante GARCH non e' dimostrato utile");
+console.log("ok volatilita': utile con vol variabile (", JSON.stringify(eg.volatilita.vantaggio_vs_ultimi63.media), ") non con vol costante");

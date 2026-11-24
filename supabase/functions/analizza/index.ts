@@ -8,6 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { opzioniCors, risposta, tokenDa } from "../_shared/http.ts";
 import { analizzaSerie, limita, statoMercato } from "../_shared/analisi.ts";
 import { aggiornaRegistro } from "../_shared/registro_segnali.ts";
+import { classificaEvidenza, probCalibrata } from "../_shared/evidenza.ts";
 import { previsioniTitolo } from "../_shared/previsioni.ts";
 import { creaDati, ErroreServizio } from "../_shared/dati.ts";
 import { leggiGruppo } from "../_shared/gruppo.ts";
@@ -96,7 +97,14 @@ Deno.serve(async (req: Request) => {
     } catch (_e) { orizzonti = null; }
     let probabilita = null;
     try { probabilita = previsioniTitolo(barre, { ticker, sim: 1000 }); } catch (_e) { probabilita = null; }
-    return risposta({ ok: true, ticker, ...analisi, orizzonti, probabilita, dati_del: aggiornato, usi_rimasti: rimasti, riuso: !consumato, usi_risparmiati: cons.risparmiati ?? 0, regime_debole: regime, contesto: { volatilita: vol, liquidita: liq, cambio }, versione_modello: orizzonti ? orizzonti.breve.versione : null });
+    let evidenza = null;
+    try {
+      const { data: v } = await sb.from("validazioni").select("esito, eseguita_il").order("eseguita_il", { ascending: false }).limit(1);
+      const ult = v && v[0];
+      evidenza = classificaEvidenza(ult ? ult.esito : null, ult ? ult.eseguita_il : null);
+      if (Array.isArray(probabilita) && ult) for (const x of probabilita as any[]) { const pc = probCalibrata(ult.esito, x.modello, x.orizzonte, x.probSu); if (pc !== null) x.probCalibrata = pc; }
+    } catch (_e) { evidenza = null; }
+    return risposta({ ok: true, ticker, ...analisi, orizzonti, probabilita, evidenza, dati_del: aggiornato, usi_rimasti: rimasti, riuso: !consumato, usi_risparmiati: cons.risparmiati ?? 0, regime_debole: regime, contesto: { volatilita: vol, liquidita: liq, cambio }, versione_modello: orizzonti ? orizzonti.breve.versione : null });
   } catch (e) {
     let usi = chiave.usi_rimasti;
     if (consumato) {

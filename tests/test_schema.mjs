@@ -288,6 +288,8 @@ assert.equal((await db.query(`select count(*)::int n from access_keys where user
   await ins("T0", "2026-03-01", 21, "base", 0.5); // aperta
   await falla(ins("T0", "2026-03-01", 21, "base", 0.5), "una sola previsione per titolo/data/orizzonte/modello/versione");
   await falla(ins("T0", "2026-03-02", 30, "base", 0.5), "orizzonte non ammesso");
+  await ins("T0", "2026-03-05", 63, "garch", 0.5); await falla(ins("T0", "2026-03-05", 63, "xyz", 0.5), "modello non ammesso");
+  await db.query(`delete from previsioni where modello = 'garch'`);
   await falla(ins("T0", "2026-03-02", 21, "base", 1.5), "probabilita' oltre 1");
   const ap = (await db.query(`select * from previsioni_aperte('t0')`)).rows;
   assert.equal(ap.length, 1); assert.equal(new Date(ap[0].data_prev).getMonth(), 2); assert.equal(new Date(ap[0].data_prev).getDate(), 1);
